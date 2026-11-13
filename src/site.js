@@ -2,6 +2,23 @@
 const { BrowserWindow } = require('electron');
 const path = require('node:path');
 const { Waiting, pause, check, attachment, workUrl } = require('./core');
+// Starts the post's 3D model display: the viewer is an iframe from details.aplaybox.com whose play icon (.icon-ziyuan)
+// sits over a blurred preview. Same action as the user clicking it; waits up to ~20 s for the iframe to appear.
+const PLAY_SCRIPT = `(async()=>{const tab=[...document.querySelectorAll('.hover_mouse')].find(e=>/모델 디스플레이|模型展示|Model display/i.test(e.textContent||''));if(tab&&!tab.classList.contains('showTypeActive'))tab.click();return true;})()`;
+const CLICK_SCRIPT = `(async()=>{for(let n=0;n<40;n++){const i=document.querySelector('.icon-ziyuan');if(i&&i.offsetParent!==null){i.click();return true;}await new Promise(r=>setTimeout(r,250));}return false;})()`;
+async function playModel(win){
+  const deadline=Date.now()+20000;
+  try{
+    while(!win.isDestroyed()&&Date.now()<deadline){
+      const wc=win.webContents;if(wc.isLoading()){await new Promise(r=>setTimeout(r,300));continue;}
+      await wc.executeJavaScript(PLAY_SCRIPT).catch(()=>{});
+      const frame=wc.mainFrame.framesInSubtree.find(f=>{try{return new URL(f.url).hostname==='details.aplaybox.com';}catch{return false;}});
+      if(frame&&await frame.executeJavaScript(CLICK_SCRIPT).catch(()=>false))return true;
+      await new Promise(r=>setTimeout(r,500));
+    }
+  }catch{/* The post stays open even if the viewer cannot be started. */}
+  return false;
+}
 const API = 'https://api.aplaybox.com/api/web/v1/';
 const ENDPOINTS = new Set(['user/getTargetUserWorks','user/getMyBasicInfo','work/getWorkDetails','user/followUser','work/likeWork','work/collectWork']);
 
@@ -64,10 +81,10 @@ class Site {
     return win;
   }
   async login() { if (!this.loginWindow || this.loginWindow.isDestroyed()) { this.loginWindow = this.newWindow('Aplaybox · 직접 로그인'); await this.loginWindow.loadURL('https://www.aplaybox.com/login'); } this.loginWindow.show(); this.loginWindow.focus(); }
-  async open(w) {
-    const old = this.pending.get(w.id); if (old && !old.win.isDestroyed()) { old.win.show(); old.win.focus(); return; }
-    const existing=this.previewWindows.get(w.id);if(existing&&!existing.isDestroyed()){existing.show();existing.focus();return;}
-    const win = this.newWindow('Aplaybox · 게시물');this.previewWindows.set(w.id,win); await win.loadURL(workUrl(w)); win.show();
+  async open(w, {play=false}={}) {
+    const old = this.pending.get(w.id); if (old && !old.win.isDestroyed()) { old.win.show(); old.win.focus(); if(play) void playModel(old.win); return; }
+    const existing=this.previewWindows.get(w.id);if(existing&&!existing.isDestroyed()){existing.show();existing.focus();if(play) void playModel(existing);return;}
+    const win = this.newWindow('Aplaybox · 게시물');this.previewWindows.set(w.id,win); await win.loadURL(workUrl(w)); win.show(); if(play) void playModel(win);
   }
   closePending() { for (const p of this.pending.values()) if (!p.win.isDestroyed()) p.win.destroy(); this.pending.clear(); }
   async resolve(w, d, signal, uid) {

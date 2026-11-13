@@ -82,7 +82,7 @@ function dispositionName(value) {
   if (extended) { try { return decodeURIComponent(extended[1]); } catch {} }
   return /filename="([^"]+)"/i.exec(value)?.[1] || /filename=([^;]+)/i.exec(value)?.[1]?.trim() || null;
 }
-async function download({ fetcher, url, folder, filename, expectedSize, signal, progress = () => {} }) {
+async function download({ fetcher, url, folder, filename, expectedSize, signal, progress = () => {}, rename = null }) {
   check(signal);
   const response = await fetcher(url, { signal, headers: { 'Accept-Encoding': 'identity' }, redirect: 'follow' });
   if (!response.ok) { const e = new Error(`파일 서버 HTTP ${response.status}`); e.status = response.status; e.retryAfter = response.headers.get('retry-after'); throw e; }
@@ -90,7 +90,9 @@ async function download({ fetcher, url, folder, filename, expectedSize, signal, 
   if (/text\/html|application\/(?:json|problem\+json)|application\/xhtml/i.test(mime)) throw new Error('파일 대신 로그인 또는 오류 문서가 반환되었습니다.');
   if (!response.body) throw new Error('다운로드 응답 본문이 없습니다.');
   await fs.mkdir(folder, { recursive: true });
-  const given = dispositionName(response.headers.get('content-disposition')) || filename;
+  const original = dispositionName(response.headers.get('content-disposition')) || filename;
+  // rename(원래 이름) -> 확장자를 포함한 새 이름. 확장자가 같을 때만 쓰고, 실패하거나 빈 값이면 원래 이름.
+  let given = original; if (rename) { try { const r = rename(original); if (typeof r === 'string' && r.trim() && path.extname(r.trim()).toLowerCase() === path.extname(original).toLowerCase()) given = r.trim(); } catch {} }
   const ext = path.extname(safeName(given, 160)).slice(0, 16);
   const base = safeName(path.basename(given, path.extname(given)), 80);
   const totalHeader = response.headers.get('content-length');

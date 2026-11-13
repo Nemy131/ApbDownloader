@@ -170,3 +170,9 @@ progress:indeterminate::-webkit-progress-bar{background:transparent}
 .update-panel{background:rgba(255,255,255,.96);border-color:#fff;box-shadow:0 18px 40px rgba(60,120,170,.22),0 0 0 1px var(--glass-ring);backdrop-filter:blur(16px)}
 .floating-clear,.floating-clear:hover{background:var(--glass);border-color:var(--glass-edge);color:var(--ink);box-shadow:0 12px 28px rgba(60,120,170,.2),0 0 0 1px var(--glass-ring);backdrop-filter:blur(14px)}
 .floating-clear b{background:var(--primary);color:#fff}
+.max-dialog{background:#f7fbfe}
+.work>.cover-box{border-radius:14px}
+.density-panel{background:#f7fbfe}
+.toolbar>.filter-details>#filter{background:#f7fbfe}
+
+:root{--titlebar-bg:#d4e7f3;--titlebar-fg:#1f3a4d}

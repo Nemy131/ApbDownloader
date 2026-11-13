@@ -1,11 +1,11 @@
-/* Dark theme (dashboard style): pure black canvas, raised #171717 tiles, bright secondary text,
+/* Dark theme (dashboard style): dark gray canvas, raised #242427 tiles, bright secondary text,
    and color used only where it carries meaning (section labels, primary actions, status).
    Loaded instead of the other themes (see theme.js); builds on style.css + readability.css. */
 :root{
  color-scheme:dark;
- --bg:#000000;--surface:#161616;--surface-2:#202020;--surface-3:#2a2a2a;
- --hair:#262626;--hair-strong:#363636;
- --text:#f5f5f5;--muted:#a3a3a3;--faint:#737373;--line:#262626;--panel:#161616;
+ --bg:#18181a;--surface:#242427;--surface-2:#2f2f33;--surface-3:#3a3a3f;
+ --hair:#35353a;--hair-strong:#46464c;
+ --text:#f5f5f5;--muted:#afafb4;--faint:#86868c;--line:#35353a;--panel:#242427;
  --blue:#3b6cf6;--blue-soft:#5b8cff;--purple:#a855f7;--green:#22c55e;--yellow:#fbbf24;--orange:#fb923c;--red:#ef4444;--pink:#f43f5e;
  --accent:var(--blue);
 }
@@ -13,7 +13,7 @@ html,body{background:var(--bg)}
 body{color:var(--text)}
 
 /* Top bars */
-.collapse-bar{background:var(--bg);border-bottom:1px solid #141414;box-shadow:none}
+.collapse-bar{background:var(--bg);border-bottom:1px solid #202023;box-shadow:none}
 header{background:var(--surface);border:0;border-radius:16px;margin:10px 22px 0;padding:14px 18px;box-shadow:none}
 h1{color:var(--text);font-size:18px;letter-spacing:-.2px;background:none;-webkit-background-clip:border-box;filter:none}
 .brand{width:36px;height:36px;font-size:18px;border:0;border-radius:50%;background:var(--blue);color:#fff;box-shadow:none}
@@ -75,13 +75,13 @@ input[type=checkbox]{accent-color:var(--blue)}
 /* Cards */
 .list{gap:12px;border-top:0}
 .work{background:var(--surface);border:1px solid transparent;border-radius:16px;box-shadow:none;transition:border-color .12s,background .12s}
-.work:hover{background:#1b1b1b;border-color:var(--hair-strong)}
-.work.selected{border-color:var(--blue);background:#131a2b;box-shadow:none}
-.work.drag-selected{border-color:var(--blue-soft);box-shadow:inset 0 0 0 2px var(--blue-soft);background:#141c33}
+.work:hover{background:#2b2b2f;border-color:var(--hair-strong)}
+.work.selected{border-color:var(--blue);background:#222a3d;box-shadow:none}
+.work.drag-selected{border-color:var(--blue-soft);box-shadow:inset 0 0 0 2px var(--blue-soft);background:#232c45}
 .work.drag-unselected{border-color:transparent;box-shadow:none}
 .selection-marquee{border:1px solid var(--blue-soft);background:rgba(59,108,246,.14);border-radius:6px}
 .work>input{box-shadow:0 0 0 4px var(--surface);border-radius:3px}
-.work>.cover,.cover{background:#0b0b0b;border-radius:12px;box-shadow:none}
+.work>.cover,.cover{background:#1c1c1f;border-radius:12px;box-shadow:none}
 .info .title{color:var(--text);font-weight:700;font-size:15px}
 .meta{color:var(--muted)}
 .work .message{color:var(--faint)}
@@ -94,7 +94,7 @@ input[type=checkbox]{accent-color:var(--blue)}
 .state[data-status="조건 확인 중"],.state[data-status="조건 처리 중"],.state[data-status="파일 확인 중"],.state[data-status="파일 선택 가능"]{color:var(--purple)}
 .badge{border:0;color:#d4d4d4;background:var(--surface-3);border-radius:999px;padding:3px 9px}
 .badge.met{color:#86efac;background:rgba(34,197,94,.14)}
-.file{background:#0f0f0f;border:1px solid var(--hair);border-radius:10px}
+.file{background:#1e1e21;border:1px solid var(--hair);border-radius:10px}
 .file span{color:var(--text)}
 .file small{color:var(--muted)}
 .file .error{color:#fca5a5}
@@ -113,7 +113,7 @@ footer{background:var(--surface);border:0;border-radius:16px;box-shadow:none;mar
 .status{color:var(--muted)}
 .dot{background:var(--faint)}.dot.active{background:var(--blue-soft)}
 .footer-help summary,.footer-help small,.dock-summary{color:var(--muted)}
-.activity{--tone:var(--faint);background:#0d0d0d;border:0;border-radius:14px;box-shadow:none}
+.activity{--tone:var(--faint);background:#1c1c1f;border:0;border-radius:14px;box-shadow:none}
 .activity[data-tone=busy]{--tone:var(--blue-soft)}.activity[data-tone=warn]{--tone:var(--yellow)}.activity[data-tone=error]{--tone:var(--red)}.activity[data-tone=done]{--tone:var(--green)}
 .activity-phase{color:var(--tone);font-size:15px;font-weight:800}
 .activity[data-tone=idle] .activity-phase{color:var(--text)}
@@ -134,7 +134,7 @@ footer{background:var(--surface);border:0;border-radius:16px;box-shadow:none;mar
 .activity .activity-ack:hover{background:var(--surface-3)}
 .floating-dock{background:var(--surface);border:1px solid var(--hair-strong);border-radius:18px;box-shadow:0 18px 44px rgba(0,0,0,.75);backdrop-filter:none}
 .floating-dock.busy{border-color:rgba(59,108,246,.55)}
-.dock-top>.activity{background:#0d0d0d}
+.dock-top>.activity{background:#1c1c1f}
 .dock-toggle{background:var(--surface-2)}
 #toast{background:var(--surface-2);border:1px solid rgba(239,68,68,.4);color:var(--text);border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.7)}
 #embeddedPanel{background:var(--bg);border-bottom:1px solid var(--hair);box-shadow:none}
@@ -142,8 +142,8 @@ footer{background:var(--surface);border:0;border-radius:16px;box-shadow:none;mar
 
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:#2e2e2e;border:3px solid var(--bg);border-radius:999px}
-::-webkit-scrollbar-thumb:hover{background:#3d3d3d}
+::-webkit-scrollbar-thumb{background:#45454a;border:3px solid var(--bg);border-radius:999px}
+::-webkit-scrollbar-thumb:hover{background:#56565c}
 @media (prefers-reduced-motion:reduce){progress:indeterminate{animation:none}button,.work{transition:none}}
 /* Compact floating dock (same footprint as Light/Aero) */
 .floating-dock{width:min(340px,calc(100vw - 48px));gap:6px;padding:8px;border-radius:18px}
@@ -159,3 +159,6 @@ footer{background:var(--surface);border:0;border-radius:16px;box-shadow:none;mar
 .floating-clear,.floating-clear:hover{background:var(--surface-2);border-color:var(--hair-strong);color:var(--text);box-shadow:0 10px 28px rgba(0,0,0,.75)}
 .floating-clear:hover{background:var(--surface-3)}
 .floating-clear b{background:var(--blue);color:#fff}
+.work>.cover-box{border-radius:12px}
+
+:root{--titlebar-bg:#18181a;--titlebar-fg:#f5f5f5}

@@ -9,3 +9,8 @@ build/
 release/
 research/
 *.zip
+tools/preview/profile/
+tools/preview/*.png
+
+# 개인 PC용 소스 실행 바로가기
+소스실행.cmd

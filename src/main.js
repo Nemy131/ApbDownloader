@@ -1,4 +1,5 @@
 'use strict';
+const TITLE_BAR=34; // 테마 색 타이틀 바 높이(px). ui/readability.css의 --titlebar-h, browser.js와 같은 값
 const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage, Notification } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -20,13 +21,31 @@ const AUTHOR_LIST_LIMIT = 30;
 let config = { folder: '', concurrency: 2, notifyOnComplete: true, autoTranslate:true, accounts: {} }, history = {};
 let activeUid = '', refreshTail = Promise.resolve();
 let bookmarks=[],authorBookmarks=[],embeddedBrowser;
+let authorUpdates={}; // uid -> { seen, newIds, checkedAt } (author-updates.json)
 function allWorks(){return [...new Map([...bookmarks,...state.works].map(w=>[w.id,w])).values()];}
 let presence=new Map(),presenceFolder='';
 function publicWork(w){const prefix=w.type+':'+w.id+':',found=presenceFolder===config.folder?presence.get(w.id):null;return {...w,hasHistory:Object.keys(history).some(k=>k.startsWith(prefix)),inFolder:!!found?.existing,bookmarked:bookmarks.some(b=>b.id===w.id),files:w.files.map(({url,...f})=>({...f,hasHistory:!!history[prefix+f.id],inFolder:!!found?.files.find(x=>x.id===f.id)?.existing}))};}
 async function scanPresence(){if(!config.folder)throw new Error('저장 폴더를 먼저 선택해 주세요.');const folder=config.folder;const result=await require('./existing').selectMissing(folder,allWorks(),history);if(folder===config.folder){presence=new Map(result.works.map(w=>[w.id,w]));presenceFolder=folder;emit();}return {scanned:result.scanned};}
 const settingsFor = uid => config.accounts[uid] || { follow: false, like: false, collect: false, confirmed: false };
 function cleanError(e) { return String(e?.message || e).replace(/https?:\/\/\S+/g, '[주소 생략]').replace(/Bearer\s+\S+/gi, '[인증 정보 생략]').slice(0, 400); }
-function snapshot() { return { ...state, defaultAuthors, autoTranslate:config.autoTranslate===true, authorBookmarks, busy, job, account: activeUid, settings: settingsFor(activeUid), folder: config.folder, concurrency: config.concurrency, notifyOnComplete: config.notifyOnComplete !== false, dataDir, works:state.works.map(publicWork),bookmarks:bookmarks.map(b=>publicWork(state.works.find(w=>w.id===b.id)||b)) }; }
+function snapshot() { return { ...state, defaultAuthors, autoTranslate:config.autoTranslate===true, authorBookmarks, authorNew: newCounts(), busy, job, account: activeUid, settings: settingsFor(activeUid), folder: config.folder, concurrency: config.concurrency, notifyOnComplete: config.notifyOnComplete !== false, translateFileNames: config.translateFileNames === true, maxExe: config.maxExe || '', dataDir, works:state.works.map(publicWork),bookmarks:bookmarks.map(b=>publicWork(state.works.find(w=>w.id===b.id)||b)) }; }
+function newCounts(){const out={};for(const a of authorBookmarks){const n=(authorUpdates[a.id]?.newIds||[]).length;if(n)out[a.id]=n;}return out;}
+// 앱 시작 시 1회: 북마크 작가의 새 모델을 확인해 저장된 목록에 새 모델만 추가한다.
+async function checkBookmarkUpdates(){
+  const AU=require('./author-updates');let changed=false,total=0;
+  for(const a of [...authorBookmarks]){
+    const uid=String(a.id);
+    try{
+      const entry=authorLists[uid+'|model']||authorLists[uid+'|all'];
+      const {record,added}=await AU.checkAuthor(uid,{fetchPage:p=>site.page(uid,1,p),entry,record:authorUpdates[uid]||{}});
+      authorUpdates[uid]=record;changed=true;total+=added.length;
+      if(added.length&&state.author===uid&&!busy){for(const w of [...added].reverse())if(!state.works.some(x=>x.id===w.id))state.works.unshift({...w,files:[]});}
+      if(added.length)log(`${a.name}: 새 모델 ${added.length}개`);
+    }catch(e){/* 확인 실패는 다음 실행에서 다시 시도 */}
+  }
+  if(changed){await atomic('author-updates.json',authorUpdates);await atomic('author-lists.json',authorLists);}
+  emit();return total;
+}
 function emit() { if (win && !win.isDestroyed()) win.webContents.send('state', snapshot()); }
 async function jsonRead(name, fallback) { try { return JSON.parse(await fs.readFile(path.join(dataDir, name), 'utf8')); } catch { return fallback; } }
 function atomic(name, value) { saving = saving.catch(() => {}).then(async () => { const target = path.join(dataDir, name); await fs.writeFile(target + '.tmp', JSON.stringify(value, null, 2), 'utf8'); await fs.rename(target + '.tmp', target); }); return saving; }
@@ -56,12 +75,15 @@ async function restoreSession() {
 }
 async function run(task, kind = 'task') { if (busy) throw new Error('작업 중입니다. 완료하거나 취소한 뒤 진행해 주세요.'); busy = true; job = kind; controller = new AbortController(); emit(); try { await task(controller.signal); } catch(e) { log(controller.signal.aborted ? '작업을 취소했습니다. 완료된 계정 행동은 유지됩니다.' : cleanError(e)); } finally { busy = false; job = null; controller = null; await persist(); emit(); } }
 function mergeDetail(w, d) { w.author = d.nick_name || w.author; w.authorId = d.user_uid; w.title = d.work_name || w.title; w.cover = d.cover || w.cover; w.date = d.audited_at || w.date; w.rules = C.requirements(d); w.permission = Number(d.download_permission) === 1; w.reason = w.permission ? '' : Number(d.download_type) === 2 ? '작가에게 문의 필요' : Number(d.download_type) === 3 ? '다운로드 미제공' : '배포 기간 또는 접근 제한'; w.detailLoaded = true; }
+function markSeen(uid){const u=authorUpdates[uid];if(!u?.newIds?.length)return;const ids=new Set(u.newIds);for(const w of state.works)if(ids.has(w.id))w.isNew=true;u.newIds=[];void atomic('author-updates.json',authorUpdates);}
 async function load(url, scope, signal, refresh=false) {
+  scope = 'model'; // 조회 범위는 모델만 (모션 목록은 조회하지 않음)
   const uid = C.authorId(url);
   rememberList();
   const cached = refresh ? null : cachedList(uid, scope);
   if (cached) {
     site.closePending(); state = { works: cached.works.map(w => ({ ...w })), author: uid, sourceUrl: url, scope, fetchedAt: cached.entry.fetchedAt, message: '', complete: true };
+    markSeen(uid);
     log(`저장된 목록 ${state.works.length}개 표시 · ${stamp(cached.entry.fetchedAt)} 조회 · 최신 목록은 새로고침`); await persist(); return;
   }
   const previous=new Map(refresh&&state.author===uid?state.works.map(w=>[w.id,w]):[]);
@@ -74,6 +96,7 @@ async function load(url, scope, signal, refresh=false) {
     }
     log(`${type === 1 ? '모델' : '모션'} ${pg.page}/${pg.last}페이지 · ${pg.found}/${pg.total}개 조회`);
   }, signal);
+  markSeen(uid);
   state.complete = true; state.fetchedAt = new Date().toISOString(); log(`목록 ${state.works.length}개 조회 완료 · 조건은 다운로드 시작 시 확인합니다.`); await persist();
 
 }
@@ -117,7 +140,7 @@ async function start(mode, signal, ids=null, exclusions={}) {
           let result;
           for (let attempt = 0; attempt < 3; attempt++) {
             C.check(signal);
-            try { result = await C.download({ fetcher: (u,opts) => fetch(u, { ...opts, headers:{...opts.headers,Referer:C.workUrl(w),'User-Agent':ses.getUserAgent()}, signal: AbortSignal.any([signal,AbortSignal.timeout(30*60*1000)]) }), url: file.url, folder, filename: file.name, expectedSize: file.size, signal, progress: p => { Object.assign(file,p); emit(); } }); break; }
+            try { result = await C.download({ fetcher: (u,opts) => fetch(u, { ...opts, headers:{...opts.headers,Referer:C.workUrl(w),'User-Agent':ses.getUserAgent()}, signal: AbortSignal.any([signal,AbortSignal.timeout(30*60*1000)]) }), url: file.url, folder, filename: file.name, expectedSize: file.size, signal, progress: p => { Object.assign(file,p); emit(); }, rename: config.translateFileNames === true ? n => require('./translation').translatedFileName(n, { title: w.title, cached: t => translator.cached(t), glossary: translator.glossary }) : null }); break; }
             catch(e) {
               if (signal.aborted) throw e;
               if ((e.status === 401 || e.status === 403) && attempt === 0) {
@@ -157,12 +180,13 @@ async function start(mode, signal, ids=null, exclusions={}) {
   log(`파일 완료 ${jobs.filter(j=>j.file.status==='완료').length}/${jobs.length}개 · 사용자 조작 대기 ${waiting}개 게시물${waiting?' · 인증 후 재개하세요.':''}`);
 }
 function handle(name, fn) { ipcMain.handle(name, async (event, ...args) => { if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return {ok:false,error:'허용되지 않은 요청'}; try { return {ok:true,value:await fn(...args)}; } catch(e) { return {ok:false,error:cleanError(e)}; } }); }
+async function loadGlossary(){translator.glossary.set(require('./glossary').parse(await fs.readFile(path.join(dataDir,'glossary.txt'),'utf8').catch(()=>'')));}
 async function bootstrap() {
   await fs.mkdir(dataDir,{recursive:true});
-  config = {...config,...await jsonRead('settings.json',{})};if(!config.autoTranslateChosen)config.autoTranslate=true;translator.setEnabled(config.autoTranslate===true); history = await jsonRead('history.json',{}); authorLists = await jsonRead('author-lists.json',{});
+  config = {...config,...await jsonRead('settings.json',{})};if(!config.autoTranslateChosen)config.autoTranslate=true;translator.setEnabled(config.autoTranslate===true); history = await jsonRead('history.json',{}); authorLists = await jsonRead('author-lists.json',{}); translator.load(await jsonRead('translations.json',{}));try{translator.configure({engine:config.translateEngine||'google',model:config.translateModel||'haiku',claudePath:config.claudePath||'',fresh:config.translateFresh===true});}catch{} await loadGlossary(); let translationSaveTimer=null; translator.onChange=()=>{if(translationSaveTimer)return;translationSaveTimer=setTimeout(()=>{translationSaveTimer=null;void atomic('translations.json',translator.entries()).catch(()=>{});},2000);};
   if(!Number.isSafeInteger(config.concurrency)||config.concurrency<1)config.concurrency=2;
   state = {...state,...await jsonRead('queue.json',{})}; state.works ||= [];
-  authorBookmarks=await jsonRead('authors.json',[]);if(!Array.isArray(authorBookmarks))authorBookmarks=[];
+  authorBookmarks=await jsonRead('authors.json',[]);if(!Array.isArray(authorBookmarks))authorBookmarks=[];authorUpdates=await jsonRead('author-updates.json',{});if(!authorUpdates||typeof authorUpdates!=='object'||Array.isArray(authorUpdates))authorUpdates={};
   bookmarks=await jsonRead('bookmarks.json',[]);if(!Array.isArray(bookmarks))bookmarks=[];
   for(const w of bookmarks){w.selected=false;w.files||=[];w.rules||=[];}
   const verificationTarget=process.argv.includes('--verify-download')?state.works.find(w=>w.selected):null;
@@ -195,9 +219,10 @@ async function bootstrap() {
     let result=null; for(let i=0;i<100;i++){result=await probe.webContents.executeJavaScript(`(() => {const c=${FIND_COMPONENT};return c?.data?{id:c.data.work_uuid,hasDownloadFlow:typeof c.downloadAdvertCheck==='function',hasAdRead:typeof c.getDownloadAdvertisements==='function',hasAccountRead:typeof c.getUserBasicInfo==='function'}:null;})()`);if(result)break;await C.pause(500);}
     if(!result)throw new Error('실제 사이트 컴포넌트 조회 실패');result.captureReady=await probe.webContents.executeJavaScript(INSTALL_CAPTURE);await fs.writeFile(path.join(dataDir,'site-probe.json'),JSON.stringify(result,null,2));probe.destroy();app.quit();return;
   }
-  win = new BrowserWindow({width:1320,height:900,minWidth:980,minHeight:680,title:'Aplaybox Downloader',backgroundColor:'#e7e7e9',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
+  win = new BrowserWindow({width:1320,height:900,minWidth:980,minHeight:680,title:'Aplaybox Downloader',backgroundColor:'#e7e7e9',autoHideMenuBar:true,titleBarStyle:'hidden',titleBarOverlay:{color:'#e7e7e9',symbolColor:'#111114',height:TITLE_BAR},webPreferences:{preload:path.join(__dirname,'preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true}});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'})); win.webContents.on('will-navigate',e=>e.preventDefault());
   handle('snapshot',()=>snapshot());
+  handle('fileNameTranslation',async enabled=>{if(typeof enabled!=='boolean')throw new Error('설정 값이 올바르지 않습니다.');config.translateFileNames=enabled;await atomic('settings.json',config);emit();return enabled;});
   handle('completionNotification',async enabled=>{
     if(typeof enabled!=='boolean')throw new Error('알림 설정 값이 올바르지 않습니다.');
     config.notifyOnComplete=enabled;
@@ -209,15 +234,108 @@ async function bootstrap() {
     config.autoTranslate=enabled;config.autoTranslateChosen=true;translator.setEnabled(enabled);await embeddedBrowser?.setTranslation(enabled);await atomic('settings.json',config);emit();return enabled;
   });
   handle('translateTexts',async texts=>{
-    if(!Array.isArray(texts)||texts.length>24||texts.some(t=>typeof t!=='string'||t.length>1800))throw new Error('번역 요청이 너무 큽니다.');
+    if(!Array.isArray(texts)||texts.length>50||texts.some(t=>typeof t!=='string'||t.length>1800))throw new Error('번역 요청이 너무 큽니다.');
     return Promise.all(texts.map(async t=>({original:t,text:await translator.translate(t)})));
   });
+  handle('translationCache',()=>translator.enabled?translator.view():{});
+  handle('titleBar',async v=>{const hex=/^#[0-9a-f]{6}$/i;if(!v||!hex.test(v.color)||!hex.test(v.symbol))throw new Error('색 값이 올바르지 않습니다.');if(win&&!win.isDestroyed())win.setTitleBarOverlay({color:v.color,symbolColor:v.symbol,height:TITLE_BAR});return true;});
+  handle('claudeAccount',async op=>{const cli=require('./claude-cli');const exe=translator.claudeExe();if(op==='logout')return cli.logout(exe);return cli.authStatus(exe);});
+  handle('translationEngine',async(op,value)=>{
+    const save=async()=>{config.translateEngine=translator.engine;config.translateModel=translator.model;config.translateFresh=translator.fresh;if(translator.claudePath)config.claudePath=translator.claudePath;else delete config.claudePath;await atomic('settings.json',config);};
+    if(op==='switch'){const v=value||{};translator.configure({engine:v.engine,model:v.model,fresh:v.fresh===true});await save();if(embeddedBrowser&&translator.enabled){await embeddedBrowser.setTranslation(false).catch(()=>{});await embeddedBrowser.setTranslation(true).catch(()=>{});}}
+    else if(op==='engine'){translator.configure({engine:value});await save();}
+    else if(op==='model'){translator.configure({model:value});await save();}
+    else if(op==='browse'){const r=await dialog.showOpenDialog(win,{title:'claude.exe 선택',defaultPath:translator.claudeExe()||undefined,filters:[{name:'Claude Code',extensions:['exe']}],properties:['openFile']});if(!r.canceled){if(!/claude\.exe$/i.test(r.filePaths[0]))throw new Error('claude.exe를 선택해 주세요.');translator.configure({claudePath:r.filePaths[0]});await save();}}
+    else if(op==='auto'){translator.configure({claudePath:''});await save();}
+    else if(op==='test'){const exe=translator.claudeExe();const t0=Date.now();try{const out=await require('./claude-cli').translateBatch(exe,[translator.glossary.apply('原神 芙宁娜 夏日泳装 MMD模型')],{model:translator.model});if(!/[가-힣]/u.test(out[0]))throw new Error('번역 결과에 한국어가 없습니다: '+out[0]);translator.configure({});return {...translator.status(),test:{ok:true,ms:Date.now()-t0,text:out[0]}};}catch(e){return {...translator.status(),test:{ok:false,error:require('./claude-cli').friendly(e.message)}};}}
+    else if(op==='clear'){translator.clear();}
+    else if(op==='glossary'){const file=path.join(dataDir,'glossary.txt');try{await fs.access(file);}catch{await fs.writeFile(file,'﻿# 번역 용어집: 한 줄에 "원문=번역" (예: 流萤=반디). 저장 후 앱을 다시 시작하면 적용됩니다. 이미 번역된 제목은 "저장된 번역 지우기" 후 다시 번역됩니다.\r\n','utf8');}await shell.openPath(file);}
+    else if(op!=='get')throw new Error('알 수 없는 요청');
+    return translator.status();
+  });
   handle('scanPresence',()=>scanPresence());
+  // 3ds Max import: files go to the bundled ImportMMD.ms through ApbMaxBridge.ms running inside Max (see maxbridge.js).
+  const MB=require('./maxbridge');
+  const saveMaxExe=async exe=>{config.maxExe=exe;await atomic('settings.json',config);emit();return exe;};
+  async function chooseMaxExe(){const r=await dialog.showOpenDialog(win,{title:'3dsmax.exe 선택',defaultPath:config.maxExe||undefined,filters:[{name:'3ds Max',extensions:['exe']}],properties:['openFile']});if(r.canceled)return null;if(!/3dsmax\.exe$/i.test(r.filePaths[0]))throw new Error('3dsmax.exe를 선택해 주세요.');return saveMaxExe(r.filePaths[0]);}
+  async function pickMaxExe(){
+    if(config.maxExe&&require('node:fs').existsSync(config.maxExe))return config.maxExe;
+    const list=await MB.findMaxExes();
+    if(!list.length)return chooseMaxExe();
+    if(list.length===1)return list[0].exe;
+    const buttons=[...list.map(x=>'3ds Max '+x.year),'취소'];
+    const {response}=await dialog.showMessageBox(win,{type:'question',title:'3ds Max 버전 선택',message:'실행할 3ds Max 버전을 선택해 주세요.',detail:'선택한 버전은 다운로드 설정의 3ds Max 항목에 저장됩니다.',buttons,cancelId:buttons.length-1,noLink:true});
+    return response<list.length?saveMaxExe(list[response].exe):null;
+  }
+  // Startup script install needs the user's OK once; later calls only refresh an outdated copy.
+  async function ensureBridge(){
+    const st=MB.installState();
+    if(!st.length)return true;
+    if(st.some(s=>s.installed)){MB.install();return true;}
+    const {response}=await dialog.showMessageBox(win,{type:'question',title:'3ds Max 연동 설치',buttons:['설치','취소'],defaultId:0,cancelId:1,noLink:true,
+      message:'3ds Max 시작 스크립트에 연동 스크립트를 설치할까요?',
+      detail:'ApbMaxBridge.ms를 아래 폴더에 복사합니다. 이후 켜는 3ds Max는 다운로더의 임포트 요청을 자동으로 받습니다. 제거하려면 이 파일을 지우면 됩니다.\n\n'+st.map(s=>s.dir).join('\n')});
+    if(response!==0)return false;
+    MB.install();return true;
+  }
+  // 3ds Max import settings dialog: Max exe (app setting), Blender / Bandizip (ImportMMD.ini), startup script.
+  handle('maxConfig',async(op,key)=>{
+    if(op==='browse'||op==='auto'){
+      if(key==='max'){if(op==='auto'){delete config.maxExe;await atomic('settings.json',config);emit();}else await chooseMaxExe();}
+      else if(key==='blender'||key==='bz'){
+        const exeName=key==='blender'?'blender.exe':'bz.exe';
+        if(op==='auto')MB.writeIni(key==='blender'?{BlenderMode:'1',BlenderVerified:'',BlenderInfo:''}:{BandizipMode:'1'});
+        else{
+          const r=await dialog.showOpenDialog(win,{title:exeName+' 선택',filters:[{name:exeName,extensions:['exe']}],properties:['openFile']});
+          if(!r.canceled){
+            if(path.basename(r.filePaths[0]).toLowerCase()!==exeName)throw new Error(exeName+' 파일을 선택해 주세요.');
+            MB.writeIni(key==='blender'?{BlenderMode:'2',BlenderPath:r.filePaths[0],BlenderVerified:'',BlenderInfo:''}:{BandizipMode:'2',BandizipPath:r.filePaths[0]});
+          }
+        }
+      }else throw new Error('알 수 없는 설정 항목입니다.');
+    }else if(op==='install')MB.install();
+    else if(op==='remove')MB.uninstall();
+    else if(op==='open'){await fs.mkdir(MB.bridgeDir(),{recursive:true});const e=await shell.openPath(MB.bridgeDir());if(e)throw new Error('폴더를 열지 못했습니다: '+e);}
+    else if(op!=='get')throw new Error('알 수 없는 요청입니다.');
+    return MB.configView(config.maxExe);
+  });
+  handle('maxImport',async ids=>{
+    if(!Array.isArray(ids)||!ids.length)throw new Error('임포트할 배포 자료를 선택해 주세요.');
+    const wanted=new Set(ids.map(String)),files=[];
+    for(const w of allWorks().filter(w=>wanted.has(String(w.id))))for(const f of MB.importableFiles(w,history,presenceFolder===config.folder?presence.get(w.id):null))if(!files.includes(f))files.push(f);
+    if(!files.length)throw new Error('선택한 자료에서 임포트할 수 있는 파일(.pmx/.zip/.rar/.7z)을 찾지 못했습니다. 먼저 다운로드해 주세요.');
+    if(!await ensureBridge())return {canceled:true};
+    const {live,unlinked}=await MB.instances();
+    let choice=null;
+    if(live.length===1&&!unlinked.length)choice=live[0];
+    else if(!live.length&&!unlinked.length)choice='new';
+    else{
+      const buttons=[...live.map(MB.label),'새 3ds Max 실행','취소'];
+      const list=files.slice(0,8).map(f=>path.basename(f)).join('\n')+(files.length>8?`\n외 ${files.length-8}개`:'');
+      const note=unlinked.length?`\n\n연동 스크립트가 로드되지 않은 3ds Max ${unlinked.length}개(PID ${unlinked.join(', ')})는 선택할 수 없습니다. 연동 설치 전에 켠 Max는 다시 시작하거나, 그 Max에서 Scripting > Run Script로 아래 파일을 한 번 실행하면 연결됩니다.\n${MB.BRIDGE_SCRIPT}`:'';
+      const {response}=await dialog.showMessageBox(win,{type:'question',title:'3ds Max로 임포트',message:`파일 ${files.length}개를 어느 3ds Max로 임포트할까요?`,detail:list+note,buttons,defaultId:0,cancelId:buttons.length-1,noLink:true});
+      if(response===buttons.length-1)return {canceled:true};
+      choice=response<live.length?live[response]:'new';
+    }
+    if(choice==='new'){
+      const exe=await pickMaxExe();if(!exe)return {canceled:true};
+      const pid=MB.launch(exe);await MB.writeRequest(pid,files);
+      log(`3ds Max를 실행했습니다. 시작이 끝나면 파일 ${files.length}개를 임포트합니다.`);
+      return {target:'new',count:files.length};
+    }
+    const taken=await MB.waitTaken(await MB.writeRequest(choice.pid,files),choice.busy?1500:8000);
+    log(taken?`${MB.label(choice)}에 파일 ${files.length}개 임포트 요청을 보냈습니다.`:`${MB.label(choice)}이 작업 중입니다. 현재 작업이 끝나면 파일 ${files.length}개를 임포트합니다.`);
+    return {target:MB.label(choice),count:files.length,taken};
+  });
   handle('bookmark',async id=>{const index=bookmarks.findIndex(w=>w.id===id);if(index>=0)bookmarks.splice(index,1);else{const w=allWorks().find(w=>w.id===id);if(!w)throw new Error('모델을 찾을 수 없습니다.');bookmarks.push(w);}await persist();emit();});
   handle('login',()=>site.login());
   const browser=()=>embeddedBrowser||=(new (require('./browser').EmbeddedBrowser)(win,ses,s=>{if(!win.isDestroyed())win.webContents.send('browser-state',s);},translator));
   const currentAuthor=()=>{try{return C.authorId(browser().current());}catch{throw new Error('사이트에서 작가 이름을 눌러 작가 페이지로 이동해 주세요.');}};
-  handle('browse',url=>browser().open(url));
+  const viewer=new (require('./viewer').ModelViewer)(win,ses,s=>{if(!win.isDestroyed())win.webContents.send('viewer-state',s);});
+  handle('viewerOpen',(id,rect)=>{const w=allWorks().find(w=>w.id===id);if(!w)throw new Error('작품 정보를 찾을 수 없습니다.');embeddedBrowser?.hide();return viewer.open(w,rect);});
+  handle('viewerBounds',rect=>viewer.bounds(rect));
+  handle('viewerClose',()=>viewer.close());
+  handle('browse',url=>{viewer.close();return browser().open(url);});
   handle('browserHide',()=>embeddedBrowser?.hide());
   handle('browserAction',action=>browser().action(action));
   handle('browserDownload',async()=>{
@@ -237,7 +355,7 @@ async function bootstrap() {
   handle('browserImport',()=>{
     if(busy)throw new Error('현재 작업이 끝난 뒤 목록을 불러와 주세요.');
     const url='https://www.aplaybox.com/u/'+currentAuthor()+'/model';
-    embeddedBrowser.hide();win.webContents.send('author-selected',url);void run(s=>load(url,'all',s),'list');
+    embeddedBrowser.hide();win.webContents.send('author-selected',url);void run(s=>load(url,'model',s),'list');
   });
   handle('authorBookmark',async(url,name)=>{
     const id=url?C.authorId(url):currentAuthor();const canonical='https://www.aplaybox.com/u/'+id+'/model';
@@ -288,8 +406,9 @@ async function bootstrap() {
   });
   handle('start',(mode,ids,exclusions={})=>{if(mode!=='download')throw new Error('조건 확인은 다운로드 시작 시 진행합니다.');if(busy)throw new Error('작업 중입니다.');void run(s=>start('download',s,Array.isArray(ids)?ids:null,{history:exclusions.history===true,folder:exclusions.folder===true}),'download');});
   handle('cancel',()=>{controller?.abort();site.closePending();emit();});
-  handle('openPost',id=>{const w=allWorks().find(w=>w.id===id);if(w)return site.open(w);});
+  handle('openPost',(id,play)=>{const w=allWorks().find(w=>w.id===id);if(w)return site.open(w,{play:play===true});});
   await win.loadFile(path.join(__dirname,'ui/index.html'));
+  setTimeout(()=>{void checkBookmarkUpdates().catch(()=>{});},1500);
   setTimeout(()=>require('./updater').checkOnStartup({app,dialog,shell,win,repo:require('../package.json').updateRepo,dataDir,onLog:m=>log(m)}),3000);
   win.on('closed',()=>{controller?.abort();site.closePending();app.quit();});
 }

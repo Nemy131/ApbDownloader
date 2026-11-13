@@ -1,11 +1,11 @@
 'use strict';
-function collect(){
+function collect(limit=12){
  if(/login|register|password|account|message|chat/i.test(location.pathname))return [];
  const state=window.__aplayTranslation ||= {nodes:new Map(),next:0};
  for(const [id,r] of state.nodes)if(!r.node.isConnected)state.nodes.delete(id);
  const known=new Map([...state.nodes].map(([id,r])=>[r.node,{id,r}]));
  const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT),out=[];let node;
- while((node=walk.nextNode())&&out.length<12){
+ while((node=walk.nextNode())&&out.length<limit){
   const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript,textarea,input,select,option,code,pre,[contenteditable],.el-dialog,[role="dialog"],[class*="captcha"],[class*="Captcha"],[class*="login"],[class*="password"],[class*="verify"],[class*="verification"],[class*="geetest"],[class*="account"],[class*="message"]'))continue;
   const rect=parent.getBoundingClientRect();if(!rect.width||!rect.height||rect.bottom<0||rect.top>innerHeight||rect.right<0||rect.left>innerWidth||getComputedStyle(parent).visibility==='hidden')continue;
   const value=node.nodeValue;if(!/[\u3400-\u9fff]/u.test(value)||/[\u3040-\u30ff]/u.test(value)||value.length>1800)continue;

@@ -73,7 +73,13 @@ function renderActivity(){
  const m=activityModel();
  buildActivity($('activity'),m,false);buildActivity($('dockActivity'),m,true);
  $('dockSummary').textContent=$('summary').textContent;
- $('dockCancel').disabled=!state.busy;
+ // 필요할 때만 표시: 선택 다운로드(선택 있음), 재시도(실패·인증 필요 있음), 취소(작업 중)
+ const busy=!!state.busy;$('dockCancel').disabled=!busy;$('dockCancel').hidden=!busy;
+ $('dockStart').hidden=busy||!selectedWorks().length;
+ $('dockRetry').hidden=busy||!((m.counts.failed||0)+(m.counts.waiting||0));
+ // 아무 작업도 없으면 상태 줄을 숨기고, 버튼도 없으면 독 전체를 숨긴다.
+ const idle=!busy&&m.tone==='idle';$('floatingDock').classList.toggle('idle',idle);
+ $('floatingDock').classList.toggle('empty',idle&&$('dockStart').hidden&&$('dockRetry').hidden&&$('dockCancel').hidden);
  $('floatingDock').classList.toggle('busy',!!state.busy);
  renderFloatingClear();
  document.documentElement.classList.toggle('no-list',!(state.works||[]).length&&!state.busy);

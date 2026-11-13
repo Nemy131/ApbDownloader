@@ -25,12 +25,8 @@ h1{color:var(--text);font-weight:800;letter-spacing:-.5px;background:none;-webki
 main{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:auto;gap:14px;align-items:start;padding:14px 22px 0}
 main>*{grid-column:1/-1;min-width:0}
 main>.default-author-buttons{grid-column:1/-1;grid-row:1}
-main>#sourcePanel{grid-column:1/span 8;grid-row:2/span 2;align-self:stretch}
-main>#authorSection{grid-column:9/span 4;grid-row:2}
-main>#settingsPanel{grid-column:9/span 4;grid-row:3}
-main>.library{grid-row:4}
+main>.library{grid-row:2}
 main>.default-author-buttons:empty{display:none}
-@media(max-width:1100px){main>#sourcePanel,main>#authorSection,main>#settingsPanel{grid-column:1/-1;grid-row:auto}}
 
 /* Tiles: white, borderless; sections marked by a colored disclosure marker */
 .author-section,.settings,.source,.filter-details,.library>.toolbar,footer,.floating-dock{background:var(--tile);border:0;border-radius:var(--tile-radius);box-shadow:none;color:var(--muted)}
@@ -93,7 +89,6 @@ input[type=checkbox]{accent-color:var(--blue)}
 .selection-marquee{border:1px solid var(--blue);background:rgba(26,124,255,.10);border-radius:8px}
 .work>input{box-shadow:0 0 0 4px #fff;border-radius:4px}
 .work>.cover,.cover{background:var(--inset);border-radius:14px;box-shadow:none}
-.work>.cover{object-fit:cover}
 .info .title{color:var(--text);font-weight:800;letter-spacing:-.2px}
 .meta{color:var(--muted)}
 .work .message{color:var(--faint)}
@@ -179,3 +174,10 @@ footer{margin:16px 22px 14px;padding:14px 16px;gap:10px 14px}
 .floating-clear,.floating-clear:hover{background:#111114;border-color:#111114;color:#fff;box-shadow:0 10px 26px rgba(17,17,20,.25)}
 .floating-clear:hover{background:#2a2a30}
 .floating-clear b{background:var(--blue);color:#fff}
+.work>.cover-box{border-radius:14px}
+/* 모든 아일랜드에 카드와 같은 연한 그림자 (떠 있는 도크는 자체 그림자 유지) */
+header,.author-section,.settings,.source,.filter-details,.library>.toolbar,footer,.list-tabs{box-shadow:var(--card-shadow)}
+.default-author-buttons button[data-author-id]{box-shadow:var(--card-shadow)}
+.default-author-buttons button[data-author-id]:hover{box-shadow:var(--card-shadow-hover)}
+
+:root{--titlebar-bg:#e7e7e9;--titlebar-fg:#111114}

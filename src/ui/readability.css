@@ -17,7 +17,7 @@ summary{cursor:pointer;user-select:none;font-size:13px;font-weight:600;padding:8
 .work{position:relative;display:flex;flex-direction:column;gap:10px;padding:12px;background:#17212f;border:1px solid #3a495e;border-radius:10px;min-width:0}
 .work:hover{border-color:#6a819e}.work.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px #5cddc133}
 .work>input{position:absolute;top:18px;left:18px;z-index:1;box-shadow:0 0 0 4px #111a26;border-radius:2px}
-.work>.cover{display:block;width:100%;height:var(--thumbnail-size);max-height:none;aspect-ratio:auto;object-fit:contain;background:#101824;border-radius:7px}
+.work>.cover{display:block;width:100%;height:var(--thumbnail-height,var(--thumbnail-size));max-height:none;aspect-ratio:auto;object-fit:cover;background:#101824;border-radius:7px}
 .work>.info{width:100%;min-width:0}.info .title{font-size:14px;font-weight:650;line-height:1.6;word-break:normal;overflow-wrap:anywhere;margin-bottom:6px;color:#f2f6fb}.meta{font-size:12px;line-height:1.5;color:#b6c5d8}.badge{font-size:11px;padding:2px 5px}.work .message{font-size:11px;line-height:1.5;color:#b5c3d4}
 .work>.actions{display:flex;flex-direction:row;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:9px;border-top:1px solid #334154;align-items:center}.work>.actions>.state{flex-basis:100%;font-size:12px;font-weight:600}.work .actions button{flex:1;padding:5px 7px;font-size:11px;min-width:0;white-space:normal}
 .work>.files{width:100%}.work .file{grid-template-columns:18px minmax(0,1fr);padding:8px;gap:6px}.work .file small,.work .file progress,.work .file .error{grid-column:2;min-width:0;text-align:left}
@@ -113,3 +113,185 @@ footer{position:static}
 /* "더 찾아보기" after the built-in author shortcuts: same pill, dashed outline so it reads as a link, not an author. */
 .default-author-buttons button.more-authors.more-authors{border:1px dashed color-mix(in srgb,var(--accent) 60%,transparent);color:var(--accent);background:transparent;font-weight:600}
 .default-author-buttons button.more-authors:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+/* 3ds Max import settings dialog (colors follow each theme's tokens). */
+.max-row{margin-top:12px;gap:12px;flex-wrap:wrap}.max-row h2{margin:0;font-size:14px}.max-row small{flex:1;min-width:200px}
+.max-dialog{width:min(720px,calc(100vw - 32px));border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--text);padding:22px 24px;box-shadow:0 24px 60px -12px rgba(0,0,0,.45)}
+.max-dialog::backdrop{background:rgba(10,12,18,.45)}
+.max-dialog h2{margin:0 0 6px;font-size:17px}.max-hint{margin:0 0 16px;color:var(--muted);font-size:12px;line-height:1.6}
+.max-field{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.max-field>b{font-size:13px}.max-field>span{font-size:12px;color:var(--muted);overflow-wrap:anywhere;line-height:1.5}.max-field>div{display:flex;gap:6px}
+.max-actions{display:flex;justify-content:space-between;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+@media (max-width:640px){.max-field{grid-template-columns:1fr}}
+
+/* 썸네일 영역(호버 재생) · 카드 다운로드 버튼 */
+.work>.cover-box{position:relative;display:block;width:100%;align-self:stretch;min-width:0}
+.work>.cover-box>.cover{display:block;width:100%;height:var(--thumbnail-height,var(--thumbnail-size));max-height:none;aspect-ratio:auto;object-fit:cover;border-radius:7px}
+.card-download.card-download{margin-left:auto;border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);font-weight:700}
+.card-download:disabled{opacity:.45}
+
+/* 작가 바로가기: 북마크 칩(★)과 삭제 ✕ */
+.default-author-buttons .author-chip{position:relative;display:inline-flex}
+.default-author-buttons .author-remove{position:absolute;top:-6px;right:-6px;display:grid;place-items:center;width:20px;height:20px;min-height:0;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:10px;line-height:1;opacity:0;pointer-events:none;transition:opacity .12s}
+.default-author-buttons .author-chip:hover .author-remove,.default-author-buttons .author-chip:focus-within .author-remove{opacity:1;pointer-events:auto}
+.default-author-buttons .author-remove:hover{color:#fff;background:#d9534f;border-color:#d9534f}
+.default-author-buttons button.add-author.add-author{border:1px dashed var(--line);background:transparent;color:var(--muted);font-weight:600}
+.default-author-buttons button.add-author:hover{color:var(--text);border-color:var(--accent)}
+.default-author-buttons button.author-fold.author-fold{background:transparent;border-color:transparent;color:var(--muted)}
+.author-dialog{width:min(520px,calc(100vw - 32px))}.author-dialog .max-field{grid-template-columns:60px minmax(0,1fr)}.author-dialog .max-field>span{display:none}
+.author-dialog .max-actions>div{display:flex;gap:6px}.author-dialog [hidden]{display:none}
+@media (prefers-reduced-motion:reduce){.default-author-buttons .author-remove{transition:none}}
+
+/* 썸네일 호버: 블러 + 가운데 재생 버튼 (게시물 열기 + 모델 디스플레이) */
+.work>.cover-box{overflow:hidden;border-radius:7px}
+.work>.cover-box>.cover{transition:filter .18s,transform .18s}
+.work>.cover-box:hover>.cover,.work>.cover-box:focus-within>.cover{filter:blur(4px) brightness(.82);transform:scale(1.04)}
+.cover-play{position:absolute;left:50%;top:50%;display:grid;place-items:center;width:58px;height:58px;min-height:0;padding:0;border:0;border-radius:50%;background:#1d8cf8;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer;opacity:0;transform:translate(-50%,-50%) scale(.85);transition:opacity .18s,transform .18s;pointer-events:none}
+.cover-play svg{width:28px;height:28px;margin-left:3px;fill:currentColor}
+.work>.cover-box:hover>.cover-play,.cover-play:focus-visible{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
+.cover-play:hover{background:#3a9dff;transform:translate(-50%,-50%) scale(1.08)}
+.cover-play:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.work>.cover-box>.cover,.cover-play{transition:none}.work>.cover-box:hover>.cover{transform:none}}
+.work>.actions.actions{align-self:stretch;width:100%;justify-content:flex-start}
+.work>.actions.actions>button{flex:0 0 auto}
+.work .actions .icon-btn.icon-btn{display:grid;place-items:center;width:34px;height:32px;padding:0}
+.icon-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn svg .fill{fill:currentColor}
+.work .actions .bookmark-btn.on{color:#f5b301}
+
+/* 헤더 설정 아이콘 + 설정 창 */
+.account .header-settings.header-settings{display:grid;place-items:center;width:36px;height:34px;padding:0}
+.header-settings svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.settings-dialog{width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto}
+.settings-dialog .set-group{padding:14px 0;border-top:1px solid var(--line)}
+.settings-dialog h3{margin:0 0 6px;font-size:14px}
+.settings-dialog .max-hint{margin:0 0 10px}
+.settings-dialog .set-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
+.settings-dialog .set-row label{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.settings-dialog .set-row #save{margin-left:auto}
+.settings-dialog #concurrency{width:64px}
+.settings-dialog #consent{display:block;margin-top:8px;color:var(--muted);font-size:12px}
+.settings-dialog .set-line{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.settings-dialog .set-line>span{color:var(--muted);font-size:12px}
+
+/* 앱 스타일 확인 창 */
+.app-confirm{width:min(420px,calc(100vw - 32px));padding:20px 22px 16px}
+.app-confirm h2{margin:0 0 8px;font-size:16px}
+.app-confirm p{margin:0 0 18px;font-size:13px;line-height:1.6;color:var(--text);overflow-wrap:anywhere}
+.app-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+.app-confirm-actions button{min-width:76px}
+button.danger-solid{background:#e5484d;border-color:#e5484d;color:#fff;font-weight:700}
+button.danger-solid:hover{background:#d93d42;border-color:#d93d42}
+/* 앱 스타일 툴팁 */
+.app-tooltip{position:fixed;z-index:2147483647;max-width:320px;padding:6px 10px;border-radius:8px;background:rgba(24,26,32,.94);color:#f4f6fa;font-size:12px;line-height:1.45;box-shadow:0 6px 18px rgba(0,0,0,.28);pointer-events:none;white-space:pre-line;animation:tip-in .12s ease-out}
+.app-tooltip[hidden]{display:none}
+@keyframes tip-in{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.app-tooltip{animation:none}}
+
+/* 우하단 플로팅 바 아이콘 버튼 */
+.dock-actions .dock-icon{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 auto;width:40px;height:36px;padding:0}
+.dock-actions #dockStart{width:56px}
+.dock-icon svg{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+#dockCancel svg rect{fill:currentColor;stroke:none}
+
+/* 작가 바로가기 줄 끝 Aplaybox 탐색, 목록 도구의 조회 범위·새로고침 */
+.default-author-buttons button.browse-site.browse-site{margin-left:auto;background:var(--text);border-color:var(--text);color:var(--bg,#fff);font-weight:700}
+.scope-control{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.toolbar .tool-icon.tool-icon{display:grid;place-items:center;width:34px;height:32px;padding:0}
+.tool-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.settings-dialog .set-buttons{display:flex;gap:6px;flex:0 0 auto}
+.settings-dialog #folder{overflow-wrap:anywhere}
+
+/* 자동 번역 체크박스 옆 엔진 선택 */
+.collapse-bar .tr-quick{margin-left:-4px;padding:3px 8px;min-height:0;height:28px;font-size:12px;border-radius:8px}
+
+/* 필터 줄: 필터 · 검색 · 정렬 · 썸네일 보기 */
+#listTools>.filter-details{flex:1 1 260px}
+.list-search{display:flex;align-items:center;gap:8px;flex:0 1 auto}
+.list-search #search{width:240px}
+.thumbnail-controls.thumbnail-controls{display:flex;align-items:center;gap:4px;padding:0}
+.thumbnail-controls .density.density{display:grid;place-items:center;width:34px;height:32px;padding:0;font-size:0}
+.thumbnail-controls .density svg{width:18px;height:18px;fill:currentColor;stroke:none}
+.thumbnail-controls .density.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.thumbnail-controls .column-control{margin:0 4px 0 6px;gap:5px}
+.thumbnail-controls .column-control select{padding:4px 8px;height:32px}
+.density-more{position:relative}
+.density-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:grid;gap:8px;width:240px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);box-shadow:0 12px 30px -8px rgba(0,0,0,.35);font-size:12px}
+.density-panel label{display:flex;justify-content:space-between}
+.density-panel input[type=range]{width:100%;padding:0}
+.collapse-bar>.translate-toggle.translate-toggle{margin-right:0}
+.collapse-bar>.tr-quick.tr-quick{margin:0 auto 0 -2px;width:auto}
+.density-panel{backdrop-filter:blur(14px)}
+
+/* 메인 화면 안 모델 디스플레이 뷰어 */
+.viewer-overlay{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;padding:18px 22px 22px;background:rgba(8,10,16,.72);backdrop-filter:blur(6px)}
+.viewer-overlay[hidden]{display:none!important}
+.viewer-bar{display:flex;align-items:center;gap:8px;padding:0 2px 12px;color:#fff}
+.viewer-heading{flex:1;min-width:0;display:flex;align-items:baseline;gap:12px}
+.viewer-heading b{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer-status{font-size:12px;color:rgba(255,255,255,.65);white-space:nowrap}
+.viewer-overlay[data-status=error] .viewer-status{color:#ff9b9b}
+.viewer-bar .viewer-icon.viewer-icon{display:grid;place-items:center;width:38px;height:36px;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff}
+.viewer-bar .viewer-icon:hover{background:rgba(255,255,255,.2)}
+.viewer-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.viewer-stage{position:relative;flex:1;min-height:0;border-radius:14px;overflow:hidden;background:#15171d}
+.viewer-spinner{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:viewer-spin .9s linear infinite}
+.viewer-overlay[data-status=ready] .viewer-spinner,.viewer-overlay[data-status=error] .viewer-spinner{display:none}
+@keyframes viewer-spin{to{transform:rotate(360deg)}}
+
+/* 독: 필요한 버튼만, 취소는 붉은 X */
+.dock-actions:not(:has(button:not([hidden]))){display:none}
+.dock-actions #dockCancel.dock-icon{color:#e5484d;background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.4)}
+.dock-actions #dockCancel.dock-icon:hover{background:#e5484d;color:#fff}
+.dock-actions #dockCancel svg{stroke-width:2.6}
+/* 배포 자료 줄 = 제목 · 필터 · 검색 · 정렬 · 썸네일 · 조회 범위 · 새로고침 */
+.library>.toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px}
+.library>.toolbar h2{margin:0 6px 0 0;white-space:nowrap}
+.toolbar>.filter-details.filter-details{position:relative;flex:1 1 180px;min-width:160px;margin:0;padding:0 12px;border:1px solid var(--line)}
+.toolbar>.filter-details>summary{padding:7px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toolbar>.filter-details[open]{flex-basis:180px}
+.toolbar>.filter-details>#filter{position:absolute;left:0;top:calc(100% + 6px);z-index:30;width:min(760px,calc(100vw - 60px));padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 12px 30px -8px rgba(0,0,0,.35)}
+.toolbar .list-search #search{width:200px}
+.toolbar .tool-icon.tool-icon,.toolbar #toggleTools{flex:0 0 auto}
+.density-panel small{color:var(--muted);font-size:11px}
+/* 도움말 */
+.default-author-buttons button.help-btn.help-btn{margin-left:auto;display:grid;place-items:center;width:38px;padding:0}
+.default-author-buttons .help-btn+.browse-site.browse-site{margin-left:0}
+.help-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.help-dialog{width:min(640px,calc(100vw - 32px))}
+.help-body{display:grid;gap:12px;max-height:min(62vh,560px);overflow:auto;padding-right:4px}
+.help-body h3{margin:0 0 3px;font-size:13px}
+.help-body p{margin:0;font-size:12.5px;line-height:1.65;color:var(--muted)}
+.help-body b{color:var(--text)}
+.toolbar #filter input[type=checkbox]{width:auto;flex:0 0 auto;margin:0}
+.toolbar #filter label{justify-content:flex-start;width:auto;flex:0 0 auto}
+.library>.toolbar.toolbar{position:relative;z-index:25;overflow:visible}
+.help-dialog .max-actions{justify-content:flex-end}
+
+/* 대기 상태 독: 상태 줄 숨김 */
+.floating-dock.idle .dock-top,.floating-dock.idle .dock-summary{display:none}
+.floating-dock.idle{width:auto}
+/* 처음 실행: 도움말 버튼 강조 */
+.default-author-buttons button.help-btn.attention{color:#fff;background:var(--accent);border-color:var(--accent);animation:help-pulse 1.6s ease-out infinite}
+@keyframes help-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 10px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* 확인창 줄바꿈·경고, 툴바 안 선택 도구 */
+.app-confirm p{white-space:pre-line}
+.app-confirm p.confirm-note{margin:-8px 0 18px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,.14);color:var(--text);font-size:12px}
+.library>.toolbar>.selection{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1 1 100%;padding:0;margin:0;border:0;background:none}
+.library>.toolbar>.selection #summary{margin-left:auto;font-size:12px;color:var(--muted)}
+.settings-dialog .claude-account span{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+
+/* 북마크 작가 새 모델 NEW */
+.author-chip{position:relative}
+.new-badge{position:absolute;left:-4px;top:-7px;z-index:2;padding:1px 6px;border-radius:999px;background:#ff3b5c;color:#fff;font-size:10px;font-weight:800;line-height:15px;letter-spacing:.3px;box-shadow:0 2px 6px rgba(255,59,92,.4);pointer-events:auto}
+.cover-box{position:relative}
+.cover-box>.new-badge.card-new{left:8px;top:8px;font-size:11px;padding:2px 8px}
+
+/* 테마 색 타이틀 바 (창 조절 버튼은 Windows 오버레이, 색은 theme.js가 이 요소의 배경·글자색으로 맞춤) */
+:root{--titlebar-h:34px}
+.app-titlebar{position:fixed;top:0;left:0;width:env(titlebar-area-width,100%);height:var(--titlebar-h);z-index:150;display:flex;align-items:center;padding:0 14px;box-sizing:border-box;background:var(--titlebar-bg,var(--bg));color:var(--titlebar-fg,var(--text));-webkit-app-region:drag;user-select:none}
+.app-titlebar-name{font-size:12px;font-weight:600;opacity:.75}
+body{padding-top:var(--titlebar-h);box-sizing:border-box}
+.update-panel{top:calc(var(--titlebar-h) + 14px)}
+.viewer-overlay{top:var(--titlebar-h)}
+#embeddedPanel{top:var(--titlebar-h)}
