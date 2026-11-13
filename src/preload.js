@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('aplay', {
   onBrowser: callback => ipcRenderer.on('browser-state',(_event,state)=>callback(state)),
   onState: callback => ipcRenderer.on('state',(_event,state)=>callback(state)),
   onFinished: callback => ipcRenderer.on('download-finished',(_event,result)=>callback(result)),
-  onAuthor: callback => ipcRenderer.on('author-selected',(_event,url)=>callback(url))
+  onAuthor: callback => ipcRenderer.on('author-selected',(_event,url)=>callback(url)),
+  onUpdate: callback => ipcRenderer.on('update-state',(_event,state)=>callback(state))
 });

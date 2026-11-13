@@ -167,3 +167,4 @@ progress:indeterminate::-webkit-progress-bar{background:transparent}
 ::-webkit-scrollbar-thumb{background:#bcd6e6;border:3px solid #e6f1f8;border-radius:999px}
 ::-webkit-scrollbar-thumb:hover{background:#9cc3da}
 @media (prefers-reduced-motion:reduce){.work,button{transition:none}.work:hover{transform:none}progress:indeterminate{animation:none}}
+.update-panel{background:rgba(255,255,255,.96);border-color:#fff;box-shadow:0 18px 40px rgba(60,120,170,.22),0 0 0 1px var(--glass-ring);backdrop-filter:blur(16px)}
