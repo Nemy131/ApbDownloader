@@ -3,6 +3,8 @@ dist/
 data/
 test-data/
 node_modules/
+__pycache__/
+*.7z
 *.part
 *.log
 build/

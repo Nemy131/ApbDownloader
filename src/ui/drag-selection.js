@@ -14,10 +14,10 @@
   if(g.active)render();
  }
  list.addEventListener('pointerdown',e=>{
-  if(e.button!==0||e.pointerType==='touch'||e.target.closest('button,input,a,select,textarea,.files'))return;
-  if(state.busy){toast('다운로드 작업이 끝난 뒤 선택을 변경해 주세요.');return;}
+  if(e.button!==0||e.pointerType==='touch'||e.target.closest('button,input,a,select,textarea,.files,.files-box'))return;
+  if(state.busy&&!['done','imported'].includes(activeTab)){toast('작업 중에는 다운로드 완료 탭의 자료만 선택할 수 있습니다.');return;}
   const rows=[...list.querySelectorAll('.work')];if(!rows.length)return;
-  gesture={card:e.target.closest('.work'),pointerId:e.pointerId,startX:e.pageX,startY:e.pageY,clientX:e.clientX,clientY:e.clientY,rows,initial:new Set(rows.filter(r=>r.querySelector(':scope > input').checked).map(r=>r.dataset.workId)),hits:new Set(),add:e.ctrlKey||e.metaKey,active:false};
+  gesture={card:e.target.closest('.work'),pointerId:e.pointerId,startX:e.pageX,startY:e.pageY,clientX:e.clientX,clientY:e.clientY,rows,initial:new Set(rows.filter(r=>r.querySelector(':scope > input').checked).map(r=>r.dataset.workId)),hits:new Set(),add:true,active:false};
   list.setPointerCapture(e.pointerId);e.preventDefault();
  });
  list.addEventListener('pointermove',e=>{const g=gesture;if(!g||e.pointerId!==g.pointerId)return;g.clientX=e.clientX;g.clientY=e.clientY;if(!g.active&&Math.hypot(e.pageX-g.startX,e.pageY-g.startY)>=6){g.active=true;window.listDragActive=true;document.body.classList.add('drag-selecting');g.box=document.createElement('div');g.box.className='selection-marquee';g.box.setAttribute('aria-hidden','true');document.body.append(g.box);tick();}if(g.active){e.preventDefault();paint();}});
@@ -25,7 +25,7 @@
  list.addEventListener('pointercancel',()=>finish(false));list.addEventListener('lostpointercapture',()=>finish(false));
  window.addEventListener('blur',()=>finish(false));window.addEventListener('keydown',e=>{if(e.key==='Escape'&&gesture){e.preventDefault();finish(false);}});
  list.addEventListener('click',e=>{
-  if(e.target.closest('button,input,a,select,textarea'))return;
+  if(e.target.closest('button,input,a,select,textarea,summary'))return;
   const file=e.target.closest('.file');if(file){file.querySelector('input[type=checkbox]')?.click();return;}
   if(e.pointerType==='touch'||e.detail===0){const row=e.target.closest('.work');if(row)void call('selection',[{id:row.dataset.workId,selected:!row.querySelector(':scope > input').checked}]);}
  });
@@ -36,7 +36,7 @@
 (()=>{
  let backgroundPress=null;
  function isBackground(target){
-  return target instanceof Element&&!target.closest('.work,button,input,select,textarea,a,label,summary,[contenteditable],#embeddedPanel,[role="tab"],#toast')&&target.matches('html,body,main,header,footer,section,.row,.toolbar,.list,.library,.selection,.author-bookmarks,.collapse-bar,.thumbnail-controls,.filter-checklist,.default-author-buttons,#listTools');
+  return target instanceof Element&&!target.closest('.work,button,input,select,textarea,a,label,summary,[contenteditable],#embeddedPanel,[role="tab"],#toast')&&target.matches('html,body,main,header,section,.row,.toolbar,.list,.library,.selection,.author-bookmarks,.collapse-bar,.thumbnail-controls,.filter-checklist,.default-author-buttons,#listTools');
  }
  document.addEventListener('pointerdown',e=>{backgroundPress=e.button===0&&isBackground(e.target)?{id:e.pointerId,x:e.clientX,y:e.clientY,moved:false}:null;},true);
  document.addEventListener('pointermove',e=>{const p=backgroundPress;if(p&&p.id===e.pointerId&&Math.hypot(e.clientX-p.x,e.clientY-p.y)>=6)p.moved=true;},true);

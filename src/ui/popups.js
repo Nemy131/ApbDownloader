@@ -19,6 +19,22 @@ function appConfirm(message,{title='확인',ok='확인',cancel='취소',danger=f
  });
 }
 
+// appChoice({title, message, detail, buttons}) -> Promise<index of the chosen button, or -1 when cancelled>
+function appChoice({title='확인',message='',detail='',buttons=[]}={}){
+ return new Promise(resolve=>{
+  const d=document.createElement('dialog');d.className='max-dialog app-confirm app-choice';
+  const h=document.createElement('h2');h.textContent=title;const p=document.createElement('p');p.textContent=message;d.append(h,p);
+  if(detail){const n=document.createElement('p');n.className='max-hint app-choice-detail';n.textContent=detail;d.append(n);}
+  const actions=document.createElement('div');actions.className='app-confirm-actions'+(buttons.length>2?' stacked':'');
+  let done=false;const finish=v=>{if(done)return;done=true;d.close();d.remove();resolve(v);};
+  const no=document.createElement('button');no.type='button';no.className='quiet';no.textContent='취소';no.onclick=()=>finish(-1);actions.append(no);
+  buttons.forEach((label,i)=>{const b=document.createElement('button');b.type='button';b.className=i===0?'primary':'quiet';b.textContent=String(label);b.onclick=()=>finish(i);actions.append(b);});
+  d.append(actions);document.body.append(d);
+  d.addEventListener('cancel',e=>{e.preventDefault();finish(-1);});
+  d.showModal();(actions.querySelector('.primary')||no).focus();
+ });
+}
+
 // Tooltips: any element with title="" shows a themed tooltip instead of the OS one.
 (()=>{
  let tip=null,target=null,timer=null;
@@ -33,6 +49,8 @@ function appConfirm(message,{title='확인',ok='확인',cancel='취소',danger=f
   if(y+h>innerHeight-4)y=r.top-h-m;
   // data-tip-side="left": e.g. viewer buttons, where the area below is covered by the native model view.
   if(el.closest('[data-tip-side="left"]')){x=r.left-w-m;y=r.top+r.height/2-h/2;}
+  // data-tip-anchor: show the tip under that container (e.g. a menu whose items and side lists must stay uncovered).
+  const anchor=el.closest('[data-tip-anchor]');if(anchor){const a=anchor.getBoundingClientRect();x=a.right-w;y=a.bottom+m;if(y+h>innerHeight-4)y=a.top-h-m;}
   x=Math.max(6,Math.min(innerWidth-w-6,x));
   t.style.left=x+'px';t.style.top=Math.max(4,y)+'px';
  };
@@ -40,7 +58,8 @@ function appConfirm(message,{title='확인',ok='확인',cancel='취소',danger=f
  document.addEventListener('mouseover',e=>{
   const el=e.target instanceof Element?e.target.closest('[title],[data-tip]'):null;
   if(el===target)return;hide();if(!el||!adopt(el))return;
-  target=el;timer=setTimeout(()=>{if(target===el&&el.isConnected)place(el);},350);
+  // 350ms hover delay, except elements marked data-tip-now (shown at once)
+  target=el;if(el.dataset.tipNow!==undefined){place(el);return;}timer=setTimeout(()=>{if(target===el&&el.isConnected)place(el);},350);
  });
  document.addEventListener('mouseout',e=>{if(target&&!target.contains(e.relatedTarget))hide();});
  for(const ev of ['mousedown','scroll','keydown','blur'])window.addEventListener(ev,hide,true);

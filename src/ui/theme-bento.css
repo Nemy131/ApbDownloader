@@ -94,7 +94,7 @@ input[type=checkbox]{accent-color:var(--blue)}
 .work .message{color:var(--faint)}
 .work>.actions{border-top:1px solid var(--line);row-gap:8px;justify-content:flex-start}
 /* Status as a colored tag on its own line (the 100% right margin forces the buttons below it). */
-.work>.actions>.state{display:inline-flex;flex:0 0 auto;margin-right:100%;padding:3px 10px;border-radius:7px;background:#ededf0;color:#55555c;font-size:11px;font-weight:700;white-space:nowrap}
+.work>.card-status>.state{display:inline-flex;flex:0 0 auto;padding:3px 10px;border-radius:7px;background:#ededf0;color:#55555c;font-size:11px;font-weight:700;white-space:nowrap}
 .work .state[data-status="완료"]{background:var(--green);color:#fff}
 .work .state[data-status="실패"],.work .state[data-status="조회 실패"],.work .state[data-status="취소"]{background:var(--red);color:#fff}
 .work .state[data-status="사용자 조작 필요"]{background:var(--yellow);color:#3d2c00}
@@ -181,3 +181,5 @@ header,.author-section,.settings,.source,.filter-details,.library>.toolbar,foote
 .default-author-buttons button[data-author-id]:hover{box-shadow:var(--card-shadow-hover)}
 
 :root{--titlebar-bg:#e7e7e9;--titlebar-fg:#111114}
+/* Keep the author row and the list block together when the list is short or empty (auto rows must not stretch to fill the page). */
+main{align-content:start}

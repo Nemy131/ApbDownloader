@@ -26,6 +26,17 @@ test('pickUpdate returns info only for a newer, published release with the Windo
   assert.equal(pickUpdate(null, '1.1.0'), null);
 });
 
+test('pickUpdate prefers the 7z asset and keeps the ZIP as the fallback', () => {
+  const seven = { ...asset, name: 'AplayboxDownloader-Windows-x64.7z', size: 7, browser_download_url: asset.browser_download_url.replace(/zip$/, '7z'), digest: 'sha256:' + 'b'.repeat(64) };
+  const info = pickUpdate({ tag_name: 'v1.2.0', assets: [asset, seven] }, '1.1.0');
+  assert.deepEqual(info.files.map(f => f.format), ['7z', 'zip']);
+  assert.equal(info.url, seven.browser_download_url);
+  assert.equal(info.size, 7);
+  assert.equal(info.files[1].sha256, 'a'.repeat(64));
+  assert.deepEqual(pickUpdate({ tag_name: 'v1.2.0', assets: [asset] }, '1.1.0').files.map(f => f.format), ['zip']);
+  assert.deepEqual(pickUpdate({ tag_name: 'v1.2.0', assets: [seven, { ...asset, browser_download_url: 'https://evil.example/x.zip' }] }, '1.1.0').files.map(f => f.format), ['7z']);
+});
+
 test('fetchLatest rejects malformed repo names without a request', async () => {
   let called = false;
   assert.equal(await fetchLatest('bad name', async () => { called = true; }), null);

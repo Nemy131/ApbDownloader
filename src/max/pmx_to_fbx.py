@@ -40,7 +40,10 @@ import traceback
 DEFAULT_SCALE_CM = 8.0        # MMD 1단위 = 8cm
 EMPTY_MORPH_EPSILON = 1e-5    # 이 값(cm)보다 변위가 작은 셰이프 키는 빈 모프로 보고 제거
 ALPHA_THRESHOLD = 0.99        # 알파 최소값이 이보다 작으면 "알파 있음"으로 판정
-ALPHA_MIN_RATIO = 0.002       # 재질이 쓰는 UV 영역에서 반투명 픽셀 비율이 이보다 작으면 불투명 재질로 판정
+ALPHA_MIN_RATIO = 0.01        # 재질이 쓰는 UV 영역에서 반투명 픽셀 비율이 이보다 작으면 불투명 재질로 판정
+                              # (0.002 였을 때 UV 경계의 번짐만으로 옷 전체가 투명 재질이 되어 3ds Max 뷰포트에서 앞뒤가 뒤집혀 보였다)
+ALPHA_SIBLING_MIN_RATIO = 0.03  # 같은 텍스처를 쓰는 'Alpha' 이름의 재질이 따로 있으면(작가가 투명 부분을 분리해 둔 경우)
+                              # 이름에 Alpha 가 없는 쪽은 이 비율 미만이면 불투명으로 본다
 UV_ALPHA_SAMPLES = 300000     # 재질 하나의 알파 판정에 쓰는 UV 표본 수 (면적에 비례해 배분)
 FBX_SMOOTH_TYPE = 'FACE'      # 'OFF' | 'FACE' | 'EDGE'
 
@@ -460,6 +463,15 @@ def convert(args):
         for m in o.data.materials:
             if m is not None and m not in mats:
                 mats.append(m)
+    # 작가가 투명 부분을 'xxx Alpha' 재질로 따로 떼어 둔 텍스처 목록 (같은 텍스처의 나머지 재질은 불투명일 가능성이 높다)
+    def _mat_names(m):
+        mmx = getattr(m, 'mmd_material', None)
+        return ((getattr(mmx, 'name_j', '') or '') if mmx else '') + ' ' + m.name
+    alpha_named_images = set()
+    for m in mats:
+        im = find_base_image(m)
+        if im is not None and 'alpha' in _mat_names(m).lower():
+            alpha_named_images.add(im.name)
     mat_rows = []
     for i, mat in enumerate(mats, 1):
         mm = getattr(mat, 'mmd_material', None)
@@ -477,7 +489,12 @@ def convert(args):
             if os.path.isfile(src):
                 if mat.name in uv_alpha:
                     alpha_ratio = uv_alpha[mat.name]
-                    has_alpha = alpha_ratio >= ALPHA_MIN_RATIO
+                    limit = ALPHA_MIN_RATIO
+                    if img.name in alpha_named_images and 'alpha' not in _mat_names(mat).lower():
+                        limit = max(limit, ALPHA_SIBLING_MIN_RATIO)
+                    has_alpha = alpha_ratio >= limit
+                    if alpha_ratio > 0 and not has_alpha:
+                        log('알파 비율 %.4f < %.4f: 불투명 재질로 처리 (%s)' % (alpha_ratio, limit, mat.name))
                 else:
                     has_alpha, alpha_ratio = image_alpha_info(img)
                 if not is_ascii(os.path.basename(src)):

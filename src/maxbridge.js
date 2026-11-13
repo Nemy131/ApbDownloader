@@ -134,6 +134,42 @@ async function waitTaken(file, ms) {
   return !fs.existsSync(file);
 }
 
+// Import results written by ImportMMD.ms (one small file per imported source file): "ok|fail<TAB>source<TAB>pmx<TAB>message".
+function parseResult(text) {
+  const [state, source, pmx, ...message] = String(text || '').replace(/^\ufeff/, '').replace(/[\r\n]+$/, '').split('\t');
+  if ((state !== 'ok' && state !== 'fail') || !source) return null;
+  return { ok: state === 'ok', source, pmx: pmx || '', message: message.join(' ').replace(/\s+/g, ' ').trim().slice(0, 300) };
+}
+// Reads and removes the pending result files, oldest first.
+async function takeResults(dir = path.join(bridgeDir(), 'results')) {
+  let names = [];
+  try { names = (await fsp.readdir(dir)).filter(n => /\.txt$/i.test(n)).sort(); } catch { return []; }
+  const out = [];
+  for (const name of names) {
+    const file = path.join(dir, name);
+    try { const r = parseResult(await fsp.readFile(file, 'utf8')); await fsp.unlink(file); if (r) out.push(r); } catch {}
+  }
+  return out;
+}
+// Pure: folds results into the per-post import record. A post is done when any of its files imported;
+// a later success replaces an earlier failure, a failure never replaces a success of the same request.
+function applyResults(imports, pending, results, now = new Date().toISOString()) {
+  let changed = false;
+  for (const r of results) {
+    const id = pending.get(path.resolve(r.source).toLowerCase());
+    if (id == null) {
+      // A failure that is not about one file (e.g. "(Blender)": no usable Blender) ends every waiting post of the request.
+      if (!r.ok && /^\(.*\)$/.test(r.source)) for (const [k, v] of Object.entries(imports)) if (v?.state === 'sent') { imports[k] = { state: 'failed', time: now, message: r.message, batch: v.batch }; changed = true; }
+      continue;
+    }
+    const old = imports[id];
+    if (!r.ok && old?.state === 'done' && old.batch === pending.batch) continue;
+    imports[id] = { state: r.ok ? 'done' : 'failed', time: now, message: r.ok ? '' : r.message, batch: pending.batch };
+    changed = true;
+  }
+  return changed;
+}
+
 function launch(exe) {
   // -U MAXScript starts the bridge even when the startup folder copy is missing (a second start just restarts its timer).
   const child = spawn(exe, ['-U', 'MAXScript', BRIDGE_SCRIPT], { cwd: path.dirname(exe), detached: true, stdio: 'ignore' });
@@ -197,6 +233,47 @@ function writeIni(changes) {
   fs.writeFileSync(iniFile(), Buffer.from('﻿' + updateIni(text, changes), 'utf16le'));
 }
 
+// Importer options of ImportMMD.ms that the downloader's import dialog can set (INI keys of [ImportMMD]).
+const OPTION_DEFS = {
+  keepMorphs: { key: 'KeepMorphs', type: 'bool', def: true },
+  restoreNames: { key: 'RestoreNames', type: 'bool', def: true },
+  splitMode: { key: 'SplitMode', type: 'choice', max: 2, def: 1 },
+  matType: { key: 'MaterialType', type: 'choice', max: 2, def: 1 },
+  alphaMode: { key: 'AlphaMode', type: 'choice', max: 3, def: 1 },
+  scaleCm: { key: 'ScaleCm', type: 'number', min: 0.001, max: 10000, def: 8 },
+  spacing: { key: 'Spacing', type: 'number', min: 0, max: 100000, def: 30 },
+  codePage: { key: 'CodePage', type: 'choice', max: 5, def: 1 },
+  forceExtract: { key: 'ForceExtract', type: 'bool', def: false },
+  multiPmx: { key: 'MultiPmx', type: 'choice', max: 2, def: 1 },
+  parallelBlender: { key: 'ParallelBlender', type: 'choice', max: 8, def: 3 },
+  reuseFbx: { key: 'ReuseFbx', type: 'bool', def: true }
+};
+// Pure: INI values -> options object (missing or invalid values fall back to the importer's defaults).
+function importOptions(ini = {}) {
+  const out = {};
+  for (const [name, d] of Object.entries(OPTION_DEFS)) {
+    const raw = ini[d.key];
+    if (d.type === 'bool') out[name] = raw == null || raw === '' ? d.def : String(raw).trim().toLowerCase() === 'true';
+    else if (d.type === 'choice') { const n = Number(raw); out[name] = Number.isInteger(n) && n >= 1 && n <= d.max ? n : d.def; }
+    else { const n = Number(raw); out[name] = raw != null && raw !== '' && Number.isFinite(n) && n >= d.min && n <= d.max ? n : d.def; }
+  }
+  // Settings saved before AlphaMode existed: UseAlpha=false meant "do not use".
+  if ((ini.AlphaMode == null || ini.AlphaMode === '') && String(ini.UseAlpha || '').toLowerCase() === 'false') out.alphaMode = 3;
+  return out;
+}
+// Pure: options object -> INI changes. Unknown names are ignored; an invalid value throws.
+function optionsToIni(options = {}) {
+  const changes = {};
+  for (const [name, d] of Object.entries(OPTION_DEFS)) {
+    if (!(name in options)) continue;
+    const v = options[name];
+    if (d.type === 'bool') { if (typeof v !== 'boolean') throw new Error('임포트 옵션 값이 올바르지 않습니다: ' + name); changes[d.key] = v ? 'true' : 'false'; }
+    else if (d.type === 'choice') { if (!Number.isInteger(v) || v < 1 || v > d.max) throw new Error('임포트 옵션 값이 올바르지 않습니다: ' + name); changes[d.key] = String(v); }
+    else { if (typeof v !== 'number' || !Number.isFinite(v) || v < d.min || v > d.max) throw new Error('임포트 옵션 값이 올바르지 않습니다: ' + name + ' (' + d.min + '~' + d.max + ')'); changes[d.key] = Number.isInteger(v) ? v.toFixed(1) : String(v); }
+  }
+  return changes;
+}
+
 // Everything the settings dialog shows.
 async function configView(maxExe) {
   const detected = await findMaxExes();
@@ -211,4 +288,4 @@ async function configView(maxExe) {
   };
 }
 
-module.exports = { IMPORTER, BRIDGE_SCRIPT, bridgeDir, startupDirs, installState, install, uninstall, maxProcesses, parseInstances, instances, label, findMaxExes, writeRequest, waitTaken, launch, importableFiles, parseIni, updateIni, readIni, writeIni, configView };
+module.exports = { OPTION_DEFS, importOptions, optionsToIni, parseResult, takeResults, applyResults, IMPORTER, BRIDGE_SCRIPT, bridgeDir, startupDirs, installState, install, uninstall, maxProcesses, parseInstances, instances, label, findMaxExes, writeRequest, waitTaken, launch, importableFiles, parseIni, updateIni, readIni, writeIni, configView };

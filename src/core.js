@@ -10,7 +10,7 @@ async function pause(ms, signal) { await delay(ms, undefined, { signal }); }
 function authorId(value) {
   const u = new URL(value);
   const m = u.pathname.match(/^\/u\/(\d+)(?:\/(?:model|motion))?\/?$/);
-  if (u.protocol !== 'https:' || u.hostname !== 'www.aplaybox.com' || u.port || u.username || u.password || !m) throw new Error('https://www.aplaybox.com/u/작가번호/model 형식의 주소를 입력해 주세요.');
+  if (u.protocol !== 'https:' || u.hostname !== 'www.aplaybox.com' || u.port || u.username || u.password || !m) throw new Error('https://www.aplaybox.com/u/업로더번호/model 형식의 주소를 입력해 주세요.');
   return m[1];
 }
 function modelFromUrl(value){
@@ -129,4 +129,31 @@ async function validCompleted(record) {
   if (!record?.path || !record.sha256) return false;
   try { const s = await fs.stat(record.path); if (s.size !== record.size) return false; const hash = crypto.createHash('sha256'); const h = await fs.open(record.path); try { for await (const c of h.createReadStream()) hash.update(c); } finally { await h.close().catch(() => {}); } return hash.digest('hex') === record.sha256; } catch { return false; }
 }
-module.exports = { Waiting, check, pause, authorId, modelFromUrl, safeName, workUrl, requirements, collectPages, fulfill, attachment, dispositionName, download, validCompleted };
+// Runs prepare(item) for every item (prepareLimit at a time) and process(job) for every job a prepare returns
+// (processLimit at a time; Infinity = no limit). A job starts as soon as it exists, without waiting for the other items.
+// prepare/process are expected to handle their own ordinary failures; a thrown error (or an aborted signal) stops new work,
+// lets running calls finish, and rejects.
+function pipeline({ items, prepare, process: run, prepareLimit = 1, processLimit = 1, signal }) {
+  const queue = []; let next = 0, preparing = 0, running = 0, failure = null;
+  const limit = n => n === Infinity ? Infinity : Math.max(1, Math.floor(Number(n)) || 1);
+  const maxPrepare = limit(prepareLimit), maxRun = limit(processLimit);
+  return new Promise((resolve, reject) => {
+    const stopped = () => !!failure || !!signal?.aborted;
+    const pump = () => {
+      while (!stopped() && preparing < maxPrepare && next < items.length) {
+        const item = items[next++]; preparing++;
+        Promise.resolve().then(() => prepare(item)).then(jobs => { if (Array.isArray(jobs)) queue.push(...jobs); }, e => { failure ||= e; }).finally(() => { preparing--; pump(); });
+      }
+      while (!stopped() && running < maxRun && queue.length) {
+        const job = queue.shift(); running++;
+        Promise.resolve().then(() => run(job)).catch(e => { failure ||= e; }).finally(() => { running--; pump(); });
+      }
+      if (preparing || running) return;
+      if (failure) return reject(failure);
+      if (signal?.aborted) return reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
+      if (next >= items.length && !queue.length) resolve();
+    };
+    pump();
+  });
+}
+module.exports = { pipeline, Waiting, check, pause, authorId, modelFromUrl, safeName, workUrl, requirements, collectPages, fulfill, attachment, dispositionName, download, validCompleted };

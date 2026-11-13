@@ -40,3 +40,34 @@ test('translations are saved per engine/model and reused or refreshed by choice'
   assert.deepEqual(t.view(), { '另一个': 'haiku 번역' });
   assert.equal(calls, 0);
 });
+
+test('built-in translations are used last, are not saved or cleared, and are skipped when translating afresh', async () => {
+  let calls = 0;
+  const t = new Translator(async () => { calls++; return { ok: true, json: async () => [[['구글 번역', '中']]] }; });
+  t.loadBuiltin({ '内置': '내장 번역', '两者': '내장 쪽', 'english only': 'x', '空': '' });
+  t.load({ version: 2, buckets: { google: { '两者': '저장된 쪽' } } });
+  t.setEnabled(true);
+  assert.equal(await t.translate('内置'), '내장 번역');
+  assert.equal(await t.translate('两者'), '저장된 쪽', 'a saved translation wins over the built-in one');
+  assert.equal(calls, 0);
+  assert.equal(t.cached('内置'), '내장 번역');
+  assert.equal(t.view()['内置'], '내장 번역'); assert.equal(t.view()['两者'], '저장된 쪽');
+  assert.equal(t.status().builtin, 2); assert.equal(t.status().cached, 1);
+  assert.deepEqual(t.entries().buckets, { google: { '两者': '저장된 쪽' } }, 'built-in entries are not written to the saved file');
+  t.clear();
+  assert.equal(await t.translate('内置'), '내장 번역', 'clearing saved translations keeps the built-in ones');
+  t.configure({ fresh: true });
+  assert.equal(t.view()['内置'], undefined);
+  assert.equal(await t.translate('内置'), '구글 번역', 'translating afresh ignores the built-in result');
+  assert.equal(calls, 1);
+});
+
+test('shipped built-in data is well formed', () => {
+  const lists = require('../src/builtin/author-lists.json'), tr = require('../src/builtin/translations.json'), defaults = require('../src/default-authors');
+  for (const a of defaults) {
+    const e = lists[a.id]; assert.ok(e && e.works.length > 0, 'list for ' + a.name);
+    for (const w of e.works) { assert.match(w.id, /^[A-Za-z0-9_-]{4,64}$/); assert.equal(w.type, 1); assert.deepEqual(Object.keys(w).sort(), ['author', 'authorId', 'cover', 'date', 'id', 'title', 'type']); assert.ok(!w.cover || /^https:\/\/[a-z0-9.-]+\.aplaybox\.com\//.test(w.cover)); }
+  }
+  assert.ok(Object.keys(tr.entries).length > 0);
+  for (const [k, v] of Object.entries(tr.entries)) { assert.equal(typeof v, 'string'); assert.ok(v && v !== k); }
+});

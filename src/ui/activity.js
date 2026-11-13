@@ -1,5 +1,5 @@
 'use strict';
-// Job status panel (footer) and floating download dock shown while the footer is scrolled out of view.
+// Job status and actions in the floating dock (bottom-right). It is the only place for them: the page has no footer.
 const ACTIVITY_GROUPS=[
  ['check','조건 확인',w=>['조건 확인 중','조건 처리 중','파일 확인 중'].includes(w.status)],
  ['queued','대기',w=>['다운로드 대기','대기','파일 선택 가능'].includes(w.status)],
@@ -58,7 +58,7 @@ function buildActivity(el,m,compact){
  const head=document.createElement('div');head.className='activity-head';
  const dot=document.createElement('span');dot.className='activity-dot';
  head.append(dot,text('span',m.phase,'activity-phase'),text('span',activityDetail(m),'activity-detail'));
- if(!m.job&&['done','warn','error'].includes(m.tone)){const ack=text('button','확인','quiet activity-ack');ack.type='button';ack.title='결과 표시를 닫습니다. 진행·완료 탭의 기록은 유지됩니다.';ack.onclick=()=>acknowledgeActivity(m.key);head.append(ack);}
+ if(!m.job&&['done','warn','error'].includes(m.tone)){const ack=text('button','확인','quiet activity-ack');ack.type='button';ack.title='결과 알림을 닫습니다. 탭의 기록은 그대로 남습니다.';ack.onclick=()=>acknowledgeActivity(m.key);head.append(ack);}
  el.append(head);
  const chips=document.createElement('div');chips.className='activity-chips';
  if(!m.acked)for(const [key,label] of ACTIVITY_GROUPS){const n=m.counts[key];if(compact&&!n)continue;const chip=text('span',label,'chip'+(n?'':' zero'));chip.dataset.key=key;chip.append(text('b',String(n)));chips.append(chip);}
@@ -71,25 +71,40 @@ function buildActivity(el,m,compact){
 }
 function renderActivity(){
  const m=activityModel();
- buildActivity($('activity'),m,false);buildActivity($('dockActivity'),m,true);
+ buildActivity($('dockActivity'),m,true);
  $('dockSummary').textContent=$('summary').textContent;
  // 필요할 때만 표시: 선택 다운로드(선택 있음), 재시도(실패·인증 필요 있음), 취소(작업 중)
  const busy=!!state.busy;$('dockCancel').disabled=!busy;$('dockCancel').hidden=!busy;
  $('dockStart').hidden=busy||!selectedWorks().length;
  $('dockRetry').hidden=busy||!((m.counts.failed||0)+(m.counts.waiting||0));
+ $('dockMaxImport').hidden=!maxImportTargets().length;
  // 아무 작업도 없으면 상태 줄을 숨기고, 버튼도 없으면 독 전체를 숨긴다.
  const idle=!busy&&m.tone==='idle';$('floatingDock').classList.toggle('idle',idle);
- $('floatingDock').classList.toggle('empty',idle&&$('dockStart').hidden&&$('dockRetry').hidden&&$('dockCancel').hidden);
+ $('floatingDock').classList.toggle('empty',idle&&$('dockStart').hidden&&$('dockRetry').hidden&&$('dockCancel').hidden&&$('dockMaxImport').hidden);
  $('floatingDock').classList.toggle('busy',!!state.busy);
- renderFloatingClear();
+ renderFloatingClear();renderFloatingForget();
  document.documentElement.classList.toggle('no-list',!(state.works||[]).length&&!state.busy);
  updateBackToTop();
 }
 // Floating 'clear selection' button (bottom-left) while any post is selected.
 function selectedWorks(){return [...new Map([...(state.bookmarks||[]),...(state.works||[])].map(w=>[w.id,w])).values()].filter(w=>w.selected);}
-function renderFloatingClear(){const n=selectedWorks().length,b=$('floatingClear');b.hidden=!n;b.disabled=!!state.busy;$('floatingClearCount').textContent=n?String(n):'';b.title=state.busy?'작업 중에는 선택을 바꿀 수 없습니다':'선택한 배포 자료 '+n+'개를 모두 해제합니다';}
+function renderFloatingClear(){const n=selectedWorks().length,b=$('floatingClear');b.hidden=!n;b.disabled=!!state.busy;$('floatingClearCount').textContent=n?String(n):'';b.removeAttribute('title');if(state.busy)b.dataset.tip='작업 중에는 선택을 바꿀 수 없습니다';else delete b.dataset.tip;}
+// Record-delete button (bottom-left, above the clear button): on the 다운로드 완료 tab it removes download records,
+// on the 임포트 완료 tab 3ds Max import records. Files on disk and Max scenes are never touched.
+const FORGET={
+ done:{label:'다운로드 기록 삭제',method:'downloadForget',pick:w=>w.selected&&w.status==='완료',note:'다운로드 완료 탭에서 빠지고 다운로드 기록(경로·SHA-256)이 지워집니다. 내려받은 파일은 그대로 남습니다.'},
+ imported:{label:'임포트 기록 삭제',method:'maxImportForget',pick:w=>w.selected&&w.maxImport,note:'임포트 완료 탭에서만 빠집니다. 다운로드한 파일과 3ds Max 씬은 그대로입니다.'}
+};
+function forgetTargets(){const f=FORGET[activeTab];return f?tabWorks().filter(f.pick):[];}
+function renderFloatingForget(){const f=FORGET[activeTab],n=forgetTargets().length,b=$('floatingForget');b.hidden=!n;if(!f)return;$('floatingForgetLabel').textContent=f.label;$('floatingForgetCount').textContent=n?String(n):'';b.disabled=activeTab==='done'&&!!state.busy;b.title=b.disabled?'작업이 끝난 뒤 삭제할 수 있습니다':'선택한 자료 '+n+'개의 '+f.label.replace(' 삭제','')+'을 삭제합니다 (파일은 그대로 남습니다)';}
+$('floatingForget').onclick=async()=>{const f=FORGET[activeTab],list=forgetTargets();if(!f||!list.length)return;
+ if(!await appConfirm('선택한 자료 '+list.length+'개의 '+f.label.replace(' 삭제','')+'을 삭제할까요?',{title:f.label,ok:'삭제',danger:true,note:f.note}))return;
+ const r=await window.aplay.call(f.method,list.map(w=>w.id));if(!r.ok){toast(r.error);return;}toast(f.label.replace(' 삭제','')+' '+r.value+'개를 삭제했습니다.');};
 $('floatingClear').onclick=()=>{const list=selectedWorks();if(list.length)call('selection',list.map(w=>({id:w.id,selected:false})));};
-for(const [dock,target] of [['dockStart','start'],['dockRetry','retry'],['dockCancel','cancel']])$(dock).onclick=()=>$(target).click();
+$('dockStart').onclick=()=>start('download');$('dockRetry').onclick=()=>start('download');$('dockCancel').onclick=()=>call('cancel');
+// While a job runs, only finished posts the user selected meanwhile (not the posts being downloaded) go to 3ds Max.
+function maxImportTargets(){return state.busy?selectedWorks().filter(w=>w.picked&&w.status==='완료'):selectedWorks();}
+$('dockMaxImport').onclick=()=>maxImport(maxImportTargets().map(w=>w.id));
 (()=>{const dock=$('floatingDock'),toggle=$('dockToggle');
  const apply=collapsed=>{dock.classList.toggle('collapsed',collapsed);toggle.textContent=collapsed?'▴':'▾';toggle.setAttribute('aria-expanded',String(!collapsed));toggle.title=collapsed?'현황 펼치기':'현황 접기';};
  let collapsed=false;try{collapsed=localStorage.getItem('dock-collapsed')==='true';}catch{}

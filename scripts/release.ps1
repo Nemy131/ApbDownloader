@@ -35,6 +35,13 @@ $out = Join-Path $root ("build\package-" + [guid]::NewGuid().ToString('N') + "\A
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Build.ps1') -OutputDirectory $out | Out-Host
 if (-not (Test-Path (Join-Path $out 'AplayboxDownloader.exe'))) { throw 'build failed' }
 
+# 1b. Slim down: Chromium ships 55 UI language packs (~50 MB); the app only needs Korean and the English fallback.
+$keepLocales = @('ko.pak', 'en-US.pak')
+$locales = Join-Path $out 'locales'
+foreach ($k in $keepLocales) { if (-not (Test-Path (Join-Path $locales $k))) { throw "missing locale $k" } }
+Get-ChildItem -File $locales | Where-Object { $keepLocales -notcontains $_.Name } | Remove-Item -Force
+"locales kept: $((Get-ChildItem -File $locales).Name -join ', ')"
+
 # 2. Smoke test: reads public Aplaybox data only (no account actions). Needs network.
 if (-not $SkipSmoke) {
   $p = Start-Process -FilePath (Join-Path $out 'AplayboxDownloader.exe') -ArgumentList '--smoke-test' -PassThru -Wait
@@ -52,6 +59,8 @@ function Verify($dir) { $d = HashMap $dir; $bad = @($src.Keys | Where-Object { $
 $dist = Join-Path $root 'dist\AplayboxDownloader'
 robocopy $out $dist /E /XD data /NFL /NDL /NJH /NJS /NP | Out-Null
 Verify $dist
+# robocopy /E never deletes, so language packs left by an older build are removed here.
+Get-ChildItem -File (Join-Path $dist 'locales') | Where-Object { $keepLocales -notcontains $_.Name } | Remove-Item -Force
 if ($InstallDir) {
   $full = [IO.Path]::GetFullPath($InstallDir)
   $running = Get-Process AplayboxDownloader -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($full, [StringComparison]::OrdinalIgnoreCase) }
@@ -78,6 +87,32 @@ if ($dataEntries) { throw 'ZIP contains data entries' }
 $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 "zip $zip entries=$count size=$((Get-Item $zip).Length) sha256=$sha"
 
+# 4b. Release 7z (same contents, about a third smaller). Made with Bandizip's console tool (bz.exe).
+# The ZIP stays as well: versions up to 2.0.0 only know the ZIP, and newer ones fall back to it when 7z cannot be extracted.
+$seven = Join-Path $relDir 'AplayboxDownloader-Windows-x64.7z'
+$sevenSha = ''
+if (Test-Path $seven) { Remove-Item -Force $seven }
+$bz = @((Get-Command bz.exe -ErrorAction SilentlyContinue).Source, (Join-Path $env:ProgramFiles 'Bandizip\bz.exe'), (Join-Path ${env:ProgramFiles(x86)} 'Bandizip\bz.exe')) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $bz) {
+  if ($Publish) { throw 'Bandizip (bz.exe) not found: the 7z asset cannot be made.' }
+  Write-Warning 'Bandizip (bz.exe) not found: 7z skipped.'
+} else {
+  Push-Location (Split-Path -Parent $out)
+  try { & $bz c -fmt:7z -l:9 -r -y $seven 'AplayboxDownloader' | Out-Null; if ($LASTEXITCODE) { throw "bz failed ($LASTEXITCODE)" } } finally { Pop-Location }
+  & $bz t $seven | Out-Null; if ($LASTEXITCODE) { throw '7z integrity test failed' }
+  # Extract it the way the updater does (Windows tar) and compare the app files with the build.
+  $probe = Join-Path $env:TEMP ("apb-7z-" + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force $probe | Out-Null
+  try {
+    & (Join-Path $env:SystemRoot 'System32\tar.exe') -xf $seven -C $probe; if ($LASTEXITCODE) { throw 'Windows tar could not extract the 7z' }
+    if (Test-Path (Join-Path $probe 'AplayboxDownloader\data')) { throw '7z contains data entries' }
+    Verify (Join-Path $probe 'AplayboxDownloader')
+    if ((Get-FileHash (Join-Path $probe 'AplayboxDownloader\AplayboxDownloader.exe')).Hash -ne (Get-FileHash (Join-Path $out 'AplayboxDownloader.exe')).Hash) { throw '7z exe mismatch' }
+  } finally { Remove-Item -Recurse -Force $probe -ErrorAction SilentlyContinue }
+  $sevenSha = (Get-FileHash $seven -Algorithm SHA256).Hash.ToLower()
+  "7z  $seven size=$((Get-Item $seven).Length) sha256=$sevenSha"
+}
+
 # 5. Publish
 if ($Publish) {
   $gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
@@ -90,9 +125,12 @@ if ($Publish) {
   & git tag "v$version"; if ($LASTEXITCODE) { throw 'git tag failed' }
   & git push origin HEAD; if ($LASTEXITCODE) { throw 'git push failed' }
   & git push origin "v$version"; if ($LASTEXITCODE) { throw 'git push tag failed' }
-  & $gh release create "v$version" $zip --repo $repo --title "v$version" --notes-file $notes; if ($LASTEXITCODE) { throw 'gh release create failed' }
-  $digest = & $gh release view "v$version" --repo $repo --json assets -q '.assets[0].digest'
-  "github digest $digest"
-  if ($digest -ne "sha256:$sha") { throw 'uploaded asset digest does not match the local ZIP' }
+  & $gh release create "v$version" $seven $zip --repo $repo --title "v$version" --notes-file $notes; if ($LASTEXITCODE) { throw 'gh release create failed' }
+  $assets = (& $gh release view "v$version" --repo $repo --json assets | ConvertFrom-Json).assets
+  foreach ($pair in @(@('AplayboxDownloader-Windows-x64.zip', $sha), @('AplayboxDownloader-Windows-x64.7z', $sevenSha))) {
+    $digest = ($assets | Where-Object { $_.name -eq $pair[0] }).digest
+    "github digest $($pair[0]) $digest"
+    if ($digest -ne "sha256:$($pair[1])") { throw "uploaded asset digest does not match the local file: $($pair[0])" }
+  }
 }
 exit 0

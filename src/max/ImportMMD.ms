@@ -34,6 +34,18 @@ global ImportMMD_Rollout
 global ImportMMD_DataDir      -- Aplaybox Downloader 연동: 설정·로그를 둘 폴더 (없으면 스크립트 폴더)
 global ImportMMD_ApbBridge = true  -- 연동용 함수(enqueueAndRun)가 있는 버전 표시
 
+-- PMX 하나의 변환·임포트 작업 (일괄 처리에서 Blender 변환을 동시에 돌리기 위한 기록)
+struct ImportMMDTask
+(
+	src = "",              -- 사용자가 넣은 파일 (.pmx 또는 압축 파일)
+	pmx = "",
+	fbx = "", man = "", plog = "",
+	keyFile = "", key = "",  -- 변환 결과 재사용 판단용
+	state = #pending,      -- #pending > #running > #converted | #failed > #done
+	proc = undefined, outTask = undefined, errTask = undefined,
+	t0 = 0, killed = false, cached = false, why = ""
+)
+
 struct ImportMMDStruct
 (
 	-- ------------------------------------------------------------ 상수
@@ -67,6 +79,8 @@ struct ImportMMDStruct
 	codePage = 1,           -- 1 GBK, 2 Shift-JIS, 3 UTF-8, 4 Big5, 5 시스템 기본
 	forceExtract = false,
 	multiPmx = 1,           -- 1 모두 변환, 2 가장 큰 파일만
+	parallelBlender = 3,    -- 동시에 돌릴 Blender 변환 수 (1~8)
+	reuseFbx = true,        -- PMX·옵션이 그대로면 이전 변환 결과(FBX)를 다시 쓴다
 	password = "",          -- 저장하지 않음
 
 	-- ------------------------------------------------------------ 실행 상태
@@ -76,6 +90,7 @@ struct ImportMMDStruct
 	cancelRequested = false,
 	progressFn = undefined,
 	cursorX = undefined,
+	tasks = #(),
 
 	-- ------------------------------------------------------------ 기본 유틸
 	fn logMsg msg =
@@ -177,6 +192,10 @@ struct ImportMMDStruct
 		codePage = (iniGet "CodePage" "1") as integer
 		forceExtract = (iniGet "ForceExtract" "false") == "true"
 		multiPmx = (iniGet "MultiPmx" "1") as integer
+		parallelBlender = (iniGet "ParallelBlender" "3") as integer
+		if parallelBlender < 1 do parallelBlender = 1
+		if parallelBlender > 8 do parallelBlender = 8
+		reuseFbx = (iniGet "ReuseFbx" "true") == "true"
 	),
 
 	fn saveSettings =
@@ -189,7 +208,8 @@ struct ImportMMDStruct
 			#("MaterialType", matType as string), #("ScaleCm", scaleCm as string),
 			#("Spacing", spacing as string), #("AlphaMode", alphaMode as string),
 			#("RestoreNames", restoreNames as string), #("CodePage", codePage as string),
-			#("ForceExtract", forceExtract as string), #("MultiPmx", multiPmx as string))
+			#("ForceExtract", forceExtract as string), #("MultiPmx", multiPmx as string),
+			#("ParallelBlender", parallelBlender as string), #("ReuseFbx", reuseFbx as string))
 		for p in pairs do setINISetting iniFile "ImportMMD" p[1] p[2]
 	),
 
@@ -756,39 +776,153 @@ struct ImportMMDStruct
 		res
 	),
 
-	-- ------------------------------------------------------------ PMX 하나 처리
-	fn processPmx pmx =
+	-- ------------------------------------------------------------ PMX 변환 작업 (Blender 를 여러 개 동시에)
+	-- 같은 PMX 를 같은 옵션·같은 변환 스크립트로 바꾸면 같은 FBX 가 나오므로, 이 키가 같으면 이전 결과를 다시 쓴다.
+	fn convertKey pmx =
 	(
-		local res = #(false, "")
+		local stamp = ""
+		try ( stamp = ((dotNetClass "System.IO.File").GetLastWriteTimeUtc pmx).ToString "yyyyMMddHHmmss" ) catch ()
+		local pyStamp = ""
+		try ( pyStamp = ((dotNetClass "System.IO.File").GetLastWriteTimeUtc pyScript).ToString "yyyyMMddHHmmss" ) catch ()
+		((getFileSize pmx) as string) + "|" + stamp + "|" + (keepMorphs as string) + "|" + (splitMode as string) + "|" + (formattedPrint scaleCm format:".4f") + "|" + pyStamp
+	),
+
+	fn makeTask src pmx =
+	(
+		local t = ImportMMDTask src:src pmx:pmx
 		local outDir = (getFilenamePath pmx) + outSubDir
 		makeDir outDir all:true
 		local stem = makeAsciiStem pmx
-		local fbx = outDir + "\\" + stem + ".fbx"
-		local man = outDir + "\\" + stem + ".manifest.tsv"
-		local plog = outDir + "\\" + stem + ".log"
-		for f in #(fbx, man, plog) do ( try ( deleteFile f ) catch () )
+		t.fbx = outDir + "\\" + stem + ".fbx"
+		t.man = outDir + "\\" + stem + ".manifest.tsv"
+		t.plog = outDir + "\\" + stem + ".log"
+		t.keyFile = outDir + "\\" + stem + ".key.txt"
+		t.key = convertKey pmx
+		if reuseFbx and (fileExists t.fbx) and (fileExists t.man) and (fileExists t.keyFile) do
+		(
+			local lines = readLines t.keyFile
+			if lines.count > 0 and lines[1] == t.key do
+			(
+				t.state = #converted
+				t.cached = true
+			)
+		)
+		t
+	),
 
-		local args = "--background --python " + (quoted pyScript) + " -- " + (quoted pmx) + " " + (quoted fbx)
+	-- Blender 를 띄우고 바로 돌아온다 (끝났는지는 pumpConverts 가 확인)
+	fn startConvert t =
+	(
+		for f in #(t.fbx, t.man, t.plog, t.keyFile) do ( try ( deleteFile f ) catch () )
+		local args = "--background --python " + (quoted pyScript) + " -- " + (quoted t.pmx) + " " + (quoted t.fbx)
 		args += " --morphs " + (if keepMorphs then "1" else "0")
 		args += " --split " + (if splitMode == 2 then "material" else "merge")
 		args += " --scale " + (formattedPrint scaleCm format:".4f")
-		args += " --log " + (quoted plog)
-		local r = runProcess blenderPath args blenderTimeoutSec ("Blender 변환: " + (filenameFromPath pmx))
-
-		if r[1] != 0 or not (fileExists fbx) then
+		args += " --log " + (quoted t.plog)
+		try
 		(
-			local why = "Blender 변환 실패 (종료 코드 " + (r[1] as string) + ")"
-			if r[1] == -999 do why = "Blender 변환 시간 초과 또는 중단"
-			for line in (readLines plog) do
+			local psi = dotNetObject "System.Diagnostics.ProcessStartInfo"
+			psi.FileName = blenderPath
+			psi.Arguments = args
+			psi.UseShellExecute = false
+			psi.CreateNoWindow = true
+			psi.RedirectStandardInput = true
+			psi.RedirectStandardOutput = true
+			psi.RedirectStandardError = true
+			local p = dotNetObject "System.Diagnostics.Process"
+			p.StartInfo = psi
+			p.Start()
+			t.outTask = p.StandardOutput.ReadToEndAsync()
+			t.errTask = p.StandardError.ReadToEndAsync()
+			try ( p.StandardInput.Close() ) catch ()
+			t.proc = p
+			t.t0 = timeStamp()
+			t.killed = false
+			t.state = #running
+		)
+		catch
+		(
+			t.why = "Blender 실행 실패: " + (getCurrentException())
+			t.state = #failed
+		)
+	),
+
+	fn finishConvert t =
+	(
+		local code = -1
+		try
+		(
+			t.proc.WaitForExit()
+			code = t.proc.ExitCode
+		)
+		catch ()
+		if t.killed do code = -999
+		try ( t.proc.Dispose() ) catch ()
+		t.proc = undefined
+		t.outTask = undefined
+		t.errTask = undefined
+		if code != 0 or not (fileExists t.fbx) then
+		(
+			local why = "Blender 변환 실패 (종료 코드 " + (code as string) + ")"
+			if code == -999 do why = "Blender 변환 시간 초과 또는 중단"
+			for line in (readLines t.plog) do
 				if (findString line "PMX2FBX_ERROR:") != undefined do why = line
-			res = #(false, why)
+			t.why = why
+			t.state = #failed
 		)
 		else
 		(
-			setProgress ("FBX 임포트: " + (filenameFromPath pmx)) undefined
-			res = importFbx fbx man
+			writeText t.keyFile t.key
+			t.state = #converted
 		)
-		res
+	),
+
+	-- 끝난 변환을 정리하고, 빈 자리만큼 대기 중인 변환을 시작한다. 반환: 진행 중인 변환 수
+	fn pumpConverts =
+	(
+		local active = 0
+		for t in tasks do
+		(
+			if t.state == #running do
+			(
+				local exited = true
+				try ( exited = t.proc.HasExited ) catch ( exited = true )
+				if exited then finishConvert t
+				else
+				(
+					if (not t.killed) and ((timeStamp() - t.t0) / 1000.0) > blenderTimeoutSec do
+					(
+						t.killed = true
+						try ( t.proc.Kill() ) catch ()
+					)
+					active += 1
+				)
+			)
+		)
+		for t in tasks do
+		(
+			if t.state == #pending and active < parallelBlender do
+			(
+				startConvert t
+				if t.state == #running do active += 1
+			)
+		)
+		active
+	),
+
+	fn killConverts =
+	(
+		for t in tasks do
+		(
+			if t.state == #running do
+			(
+				try ( t.proc.Kill() ) catch ()
+				try ( t.proc.Dispose() ) catch ()
+				t.proc = undefined
+				t.why = "중단됨"
+				t.state = #failed
+			)
+		)
 	),
 
 	-- ------------------------------------------------------------ 일괄 처리
@@ -796,6 +930,21 @@ struct ImportMMDStruct
 	(
 		msg = substituteString (msg as string) "-- Runtime error: " ""
 		append results #(src, pmx, ok, msg)
+		-- Aplaybox Downloader 연동: 파일별 결과를 연동 폴더의 results 에 남긴다 (다운로더의 [임포트 완료] 탭이 읽고 지운다)
+		if classOf ImportMMD_DataDir == String and ImportMMD_DataDir != "" do
+		(
+			try
+			(
+				local rdir = ImportMMD_DataDir
+				if not (matchPattern rdir pattern:"*\\") do rdir += "\\"
+				rdir += "results\\"
+				makeDir rdir all:true
+				local stamp = ((dotNetClass "System.DateTime").Now).ToString "yyyyMMddHHmmssfffffff"
+				local line = (if ok then "ok" else "fail") + "\t" + (src as string) + "\t" + (pmx as string) + "\t" + (substituteString (substituteString msg "\n" " ") "\t" " ")
+				(dotNetClass "System.IO.File").WriteAllText (rdir + stamp + "-" + (results.count as string) + ".txt") line (dotNetObject "System.Text.UTF8Encoding" false)
+			)
+			catch ()
+		)
 		logMsg ((if ok then "[성공] " else "[실패] ") + (filenameFromPath src) + (if pmx != "" and pmx != src then (" > " + (filenameFromPath pmx)) else "") + " : " + msg)
 	),
 
@@ -829,10 +978,12 @@ struct ImportMMDStruct
 			addResult "(Blender)" "" false ("mmd_tools 를 쓸 수 있는 Blender 를 찾지 못해 시작하지 않음.\n" + blenderReport)
 		else
 		(
+			tasks = #()
+			-- 1) 파일 순서대로 압축을 풀어 PMX 목록을 만든다. PMX 가 나오는 대로 Blender 변환을 미리 시작한다.
 			for i = 1 to files.count while not cancelRequested do
 			(
 				local f = files[i]
-				setProgress ("[" + (i as string) + "/" + (files.count as string) + "] " + (filenameFromPath f)) (100.0 * (i - 1) / files.count)
+				setProgress ("[" + (i as string) + "/" + (files.count as string) + "] 준비: " + (filenameFromPath f)) (20.0 * (i - 1) / files.count)
 				try
 				(
 					if not (fileExists f) do throw "파일이 없음"
@@ -841,17 +992,52 @@ struct ImportMMDStruct
 					else pmxList = collectPmxFromArchive f
 					if pmxList.count == 0 then addResult f "" false "압축 파일 안에 .pmx 가 없음"
 					else
-						for pmx in pmxList while not cancelRequested do
-						(
-							local r = #(false, "")
-							try ( with redraw off ( r = processPmx pmx ) )
-							catch ( r = #(false, getCurrentException()) )
-							addResult f pmx r[1] r[2]
-						)
+						for pmx in pmxList do append tasks (makeTask f pmx)
 				)
 				catch ( addResult f "" false (getCurrentException()) )
+				pumpConverts()
 			)
-			if cancelRequested do logMsg "사용자가 중단함"
+			-- 2) 변환이 끝난 것부터 파일 순서대로 임포트한다. 임포트하는 동안에도 나머지 변환은 계속 진행된다.
+			local nextIdx = 1
+			local tStart = timeStamp()
+			while nextIdx <= tasks.count and not cancelRequested do
+			(
+				local active = pumpConverts()
+				local t = tasks[nextIdx]
+				local pct = 20.0 + 80.0 * (nextIdx - 1) / tasks.count
+				if t.state == #converted then
+				(
+					setProgress ("[" + (nextIdx as string) + "/" + (tasks.count as string) + "] FBX 임포트: " + (filenameFromPath t.pmx)) pct
+					local r = #(false, "")
+					try ( with redraw off ( r = importFbx t.fbx t.man ) )
+					catch ( r = #(false, getCurrentException()) )
+					if r[1] and t.cached do r[2] += " (이전 변환 결과 재사용)"
+					addResult t.src t.pmx r[1] r[2]
+					t.state = #done
+					nextIdx += 1
+				)
+				else if t.state == #failed then
+				(
+					addResult t.src t.pmx false t.why
+					t.state = #done
+					nextIdx += 1
+				)
+				else
+				(
+					sleep 0.1
+					windows.processPostedMessages()
+					local el = ((timeStamp() - tStart) / 1000.0) as integer
+					setProgress ("[" + (nextIdx as string) + "/" + (tasks.count as string) + "] Blender 변환 중 " + (active as string) + "개: " + (filenameFromPath t.pmx) + "  (" + (el as string) + "초)") pct
+				)
+			)
+			if cancelRequested do
+			(
+				killConverts()
+				for t in tasks do
+					if t.state != #done do addResult t.src t.pmx false "사용자가 중단함"
+				logMsg "사용자가 중단함"
+			)
+			tasks = #()
 		)
 		try ( redrawViews() ) catch ()
 		local summary = summaryText()
@@ -967,6 +1153,8 @@ rollout ImportMMD_Rollout "MMD 모델 임포트 (PMX > Blender > FBX)" width:470
 		dropdownlist ddlAlpha "알파가 있는 텍스처:" items:#("컷아웃 (해당 재질은 Physical Material)", "반투명 Opacity (Standard 재질)", "사용 안 함")
 		spinner spnScale "스케일 (MMD 1단위 = cm): " range:[0.001, 10000, 8] type:#float fieldWidth:60 across:2 align:#left
 		spinner spnSpacing "모델 간격: " range:[0, 100000, 30] type:#float fieldWidth:60 align:#right
+		spinner spnParallel "동시 변환 (Blender 개수): " range:[1, 8, 3] type:#integer fieldWidth:40 across:2 align:#left
+		checkbox chkReuse "이전 변환 결과 재사용" align:#right
 	)
 	group "압축 파일"
 	(
@@ -1019,6 +1207,8 @@ rollout ImportMMD_Rollout "MMD 모델 임포트 (PMX > Blender > FBX)" width:470
 		ddlCp.selection = t.codePage
 		chkForce.checked = t.forceExtract
 		rdoMulti.state = t.multiPmx
+		spnParallel.value = t.parallelBlender
+		chkReuse.checked = t.reuseFbx
 		rdoBlender.state = t.blenderMode
 		edtBlender.text = t.blenderPath
 		lblBlender.text = if t.blenderVerified != "" and t.blenderVerified == t.blenderPath then t.blenderInfo else "아직 검증 안 됨 (실행할 때 자동으로 확인)"
@@ -1044,6 +1234,8 @@ rollout ImportMMD_Rollout "MMD 모델 임포트 (PMX > Blender > FBX)" width:470
 		t.password = edtPw.text
 		t.forceExtract = chkForce.checked
 		t.multiPmx = rdoMulti.state
+		t.parallelBlender = spnParallel.value
+		t.reuseFbx = chkReuse.checked
 		t.blenderMode = rdoBlender.state
 		t.extraDirs = edtExtra.text
 		t.bzMode = rdoBz.state
@@ -1223,6 +1415,11 @@ rollout ImportMMD_Rollout "MMD 모델 임포트 (PMX > Blender > FBX)" width:470
 	-- Aplaybox Downloader 연동: 파일을 목록에 추가하고 바로 임포트한다.
 	fn enqueueAndRun files =
 	(
+		-- 다운로더의 임포트 창에서 정한 옵션(INI)을 다시 읽어 창에 반영한다. 임포트가 진행 중이면 현재 작업의 옵션을 바꾸지 않는다.
+		if not running do
+		(
+			try ( ImportMMDTool.loadSettings(); settingsToUi() ) catch ()
+		)
 		for f in files do
 		(
 			local dup = false

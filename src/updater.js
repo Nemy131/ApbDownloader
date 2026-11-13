@@ -10,7 +10,10 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 
-const ASSET_PATTERN = /^AplayboxDownloader-Windows-x64\.zip$/i;
+// A release carries the same files twice: a 7z (smaller, preferred) and a ZIP (versions up to 2.0.0 only know this one;
+// newer ones fall back to it when the 7z cannot be extracted, e.g. on Windows 10 whose tar has no 7z support).
+const ASSET_PATTERN = /^AplayboxDownloader-Windows-x64\.(7z|zip)$/i;
+const ASSET_HOST = /^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//;
 const RESULT_FILE = 'update-result.json';
 
 function parseVersion(v) {
@@ -28,10 +31,13 @@ function pickUpdate(release, currentVersion) {
   if (!release || release.draft || release.prerelease) return null;
   const version = String(release.tag_name || '').replace(/^v/i, '');
   if (!parseVersion(version) || compareVersions(version, currentVersion) <= 0) return null;
-  const asset = (release.assets || []).find(a => ASSET_PATTERN.test(a.name || ''));
-  if (!asset || !/^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//.test(asset.browser_download_url || '')) return null;
-  const sha256 = /^sha256:([0-9a-f]{64})$/i.exec(asset.digest || '')?.[1]?.toLowerCase() || null;
-  return { version, notes: String(release.body || '').trim(), url: asset.browser_download_url, size: Number(asset.size) || 0, sha256, page: release.html_url || '' };
+  const files = (release.assets || []).filter(a => ASSET_PATTERN.test(a.name || '') && ASSET_HOST.test(a.browser_download_url || '')).map(a => ({
+    format: /\.7z$/i.test(a.name) ? '7z' : 'zip', url: a.browser_download_url, size: Number(a.size) || 0,
+    sha256: /^sha256:([0-9a-f]{64})$/i.exec(a.digest || '')?.[1]?.toLowerCase() || null
+  })).sort((a, b) => (a.format === '7z' ? 0 : 1) - (b.format === '7z' ? 0 : 1));
+  if (!files.length) return null;
+  // url/size/sha256 describe the preferred file; files lists every usable one in the order to try.
+  return { version, notes: String(release.body || '').trim(), ...files[0], files, page: release.html_url || '' };
 }
 
 const releasesPage = repo => `https://github.com/${repo}/releases`;
@@ -66,7 +72,13 @@ async function download(info, target, onProgress) {
 const powershell = () => path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 
 // Extracts while the app is still running so progress can be shown and failures reported in the UI.
-function extract(zip, dest) {
+// 7z goes through the tar that ships with Windows (libarchive; reads 7z on Windows 11 23H2 and later).
+function extract(zip, dest, format = 'zip') {
+  if (format === '7z') return new Promise((resolve, reject) => {
+    fs.mkdirSync(dest, { recursive: true });
+    execFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', dest],
+      { windowsHide: true, timeout: 300000 }, err => err ? reject(new Error('압축 해제 실패: ' + (err.message || err))) : resolve());
+  });
   return new Promise((resolve, reject) => {
     execFile(powershell(), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', 'Expand-Archive -LiteralPath $env:APB_ZIP -DestinationPath $env:APB_DEST -Force'],
       { env: { ...process.env, APB_ZIP: zip, APB_DEST: dest }, windowsHide: true, timeout: 300000 },
@@ -167,17 +179,27 @@ async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog })
     if (response !== 0) return;
 
     const temp = await fsp.mkdtemp(path.join(os.tmpdir(), 'aplaybox-update-'));
-    const zip = path.join(temp, 'AplayboxDownloader-Windows-x64.zip');
-    send({ phase: 'download', version: info.version, loaded: 0, total: info.size }, true);
-    try {
-      await download(info, zip, (loaded, total) => { send({ phase: 'download', version: info.version, loaded, total }); if (!win.isDestroyed() && total) win.setProgressBar(loaded / total); });
-    } finally { if (!win.isDestroyed()) win.setProgressBar(-1); }
-    send({ phase: 'extract', version: info.version }, true);
-    const dest = path.join(temp, 'extract');
-    await extract(zip, dest);
-    const src = path.join(dest, 'AplayboxDownloader');
-    if (!fs.existsSync(path.join(src, 'AplayboxDownloader.exe'))) throw new Error('받은 파일 안에 AplayboxDownloader.exe가 없습니다.');
-    await fsp.unlink(zip).catch(() => {});
+    // Try each release file in turn (7z first); the next one is used only when this one fails.
+    let src = '';
+    for (const [i, file] of info.files.entries()) {
+      const zip = path.join(temp, 'AplayboxDownloader-Windows-x64.' + file.format), dest = path.join(temp, 'extract-' + file.format);
+      try {
+        send({ phase: 'download', version: info.version, loaded: 0, total: file.size }, true);
+        try {
+          await download(file, zip, (loaded, total) => { send({ phase: 'download', version: info.version, loaded, total }); if (!win.isDestroyed() && total) win.setProgressBar(loaded / total); });
+        } finally { if (!win.isDestroyed()) win.setProgressBar(-1); }
+        send({ phase: 'extract', version: info.version }, true);
+        await extract(zip, dest, file.format);
+        if (!fs.existsSync(path.join(dest, 'AplayboxDownloader', 'AplayboxDownloader.exe'))) throw new Error('받은 파일 안에 AplayboxDownloader.exe가 없습니다.');
+        src = path.join(dest, 'AplayboxDownloader');
+        await fsp.unlink(zip).catch(() => {});
+        break;
+      } catch (e) {
+        await fsp.unlink(zip).catch(() => {}); await fsp.rm(dest, { recursive: true, force: true }).catch(() => {});
+        if (i === info.files.length - 1) throw e;
+        onLog?.(`업데이트 파일(${file.format})을 쓰지 못해 다른 형식으로 다시 받습니다: ${e?.message || e}`);
+      }
+    }
     send({ phase: 'restart', version: info.version }, true);
     launchSwap({ APB_PID: String(process.pid), APB_SRC: src, APB_APPDIR: appDir, APB_EXE: process.execPath, APB_TEMP: temp, APB_VERSION: info.version, APB_LOG: path.join(dataDir, 'update.log'), APB_RESULT: path.join(dataDir, RESULT_FILE) });
     onLog?.(`업데이트 ${info.version} 적용을 위해 앱을 다시 시작합니다.`);
@@ -189,4 +211,4 @@ async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog })
   }
 }
 
-module.exports = { parseVersion, compareVersions, pickUpdate, fetchLatest, download, checkOnStartup };
+module.exports = { parseVersion, compareVersions, pickUpdate, fetchLatest, download, extract, checkOnStartup };

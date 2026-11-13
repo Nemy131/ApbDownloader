@@ -45,7 +45,7 @@ class Site {
     const cookies = await this.session.cookies.get({ url: 'https://www.aplaybox.com' });
     return { uid: cookies.find(c => c.name === 'user_uuid_cookie')?.value || '', token: cookies.find(c => c.name === 'access_token_cookie')?.value || '' };
   }
-  async assertAccount(uid) { const a = await this.identity(); if (!a.token || !a.uid) throw new Waiting('로그인이 필요합니다. 로그인 창에서 직접 로그인한 뒤 재시도해 주세요.'); if (uid && a.uid !== uid) throw new Waiting('계정이 변경되었습니다. 새 계정의 자동 처리 설정을 저장한 뒤 재시도해 주세요.'); return a; }
+  async assertAccount(uid) { const a = await this.identity(); if (!a.token || !a.uid) throw new Waiting('로그인이 필요합니다. 로그인 버튼을 눌러 직접 로그인한 뒤 재시도해 주세요.'); if (uid && a.uid !== uid) throw new Waiting('계정이 변경되었습니다. 새 계정의 자동 처리 설정을 저장한 뒤 재시도해 주세요.'); return a; }
   async api(endpoint, body, signal, expectedUid) {
     if (!ENDPOINTS.has(endpoint)) throw new Error('허용되지 않은 사이트 요청입니다.');
     const mutation = /followUser|likeWork|collectWork/.test(endpoint);
@@ -80,7 +80,8 @@ class Site {
     win.webContents.on('will-navigate', (e, url) => { if (!allow(url)) e.preventDefault(); });
     return win;
   }
-  async login() { if (!this.loginWindow || this.loginWindow.isDestroyed()) { this.loginWindow = this.newWindow('Aplaybox · 직접 로그인'); await this.loginWindow.loadURL('https://www.aplaybox.com/login'); } this.loginWindow.show(); this.loginWindow.focus(); }
+  // The window is shown at once and the page loads inside it; waiting for the whole page first made the button look dead for seconds.
+  async login() { const fresh = !this.loginWindow || this.loginWindow.isDestroyed(); if (fresh) this.loginWindow = this.newWindow('Aplaybox · 직접 로그인 (불러오는 중…)'); const w = this.loginWindow; w.show(); w.focus(); if (fresh) w.loadURL('https://www.aplaybox.com/login').catch(e => { if (!w.isDestroyed()) this.log('로그인 페이지를 열지 못했습니다: ' + (e?.message || e)); }); }
   async open(w, {play=false}={}) {
     const old = this.pending.get(w.id); if (old && !old.win.isDestroyed()) { old.win.show(); old.win.focus(); if(play) void playModel(old.win); return; }
     const existing=this.previewWindows.get(w.id);if(existing&&!existing.isDestroyed()){existing.show();existing.focus();if(play) void playModel(existing);return;}

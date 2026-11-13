@@ -106,7 +106,7 @@ footer{position:static}
 .floating-clear b{min-width:22px;padding:1px 7px;border-radius:999px;font-size:12px;text-align:center}
 /* First run / empty list: point at the built-in author shortcuts (uses each theme's --accent). */
 .no-list .default-author-buttons:not(:empty){align-items:center;padding:10px 12px;border-radius:20px;outline:2px solid var(--accent);outline-offset:0;background:color-mix(in srgb,var(--accent) 9%,transparent);animation:author-hint 1.8s ease-in-out infinite}
-.no-list .default-author-buttons:not(:empty)::before{content:'시작하기 · 작가를 선택하면 배포 자료를 불러옵니다';margin:0 6px 0 4px;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+.no-list .default-author-buttons:not(:empty)::before{content:'시작하기 · 업로더를 선택하면 배포 자료를 불러옵니다';margin:0 6px 0 4px;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
 .no-list .default-author-buttons button:not(.active){border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
 @keyframes author-hint{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 20%,transparent)}}
 @media (prefers-reduced-motion:reduce){.no-list .default-author-buttons{animation:none}}
@@ -129,7 +129,7 @@ footer{position:static}
 .card-download.card-download{margin-left:auto;border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);font-weight:700}
 .card-download:disabled{opacity:.45}
 
-/* 작가 바로가기: 북마크 칩(★)과 삭제 ✕ */
+/* 업로더 바로가기: 북마크 칩(★)과 삭제 ✕ */
 .default-author-buttons .author-chip{position:relative;display:inline-flex}
 .default-author-buttons .author-remove{position:absolute;top:-6px;right:-6px;display:grid;place-items:center;width:20px;height:20px;min-height:0;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:10px;line-height:1;opacity:0;pointer-events:none;transition:opacity .12s}
 .default-author-buttons .author-chip:hover .author-remove,.default-author-buttons .author-chip:focus-within .author-remove{opacity:1;pointer-events:auto}
@@ -193,7 +193,7 @@ button.danger-solid:hover{background:#d93d42;border-color:#d93d42}
 .dock-icon svg{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 #dockCancel svg rect{fill:currentColor;stroke:none}
 
-/* 작가 바로가기 줄 끝 Aplaybox 탐색, 목록 도구의 조회 범위·새로고침 */
+/* 업로더 바로가기 줄 끝 Aplaybox 탐색, 목록 도구의 조회 범위·새로고침 */
 .default-author-buttons button.browse-site.browse-site{margin-left:auto;background:var(--text);border-color:var(--text);color:var(--bg,#fff);font-weight:700}
 .scope-control{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
 .toolbar .tool-icon.tool-icon{display:grid;place-items:center;width:34px;height:32px;padding:0}
@@ -223,15 +223,15 @@ button.danger-solid:hover{background:#d93d42;border-color:#d93d42}
 .density-panel{backdrop-filter:blur(14px)}
 
 /* 메인 화면 안 모델 디스플레이 뷰어 */
-.viewer-overlay{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;padding:18px 22px 22px;background:rgba(8,10,16,.72);backdrop-filter:blur(6px)}
+.viewer-overlay{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;padding:22px;background:rgba(8,10,16,.72);backdrop-filter:blur(6px)}
 .viewer-overlay[hidden]{display:none!important}
-.viewer-bar{display:flex;align-items:center;gap:8px;padding:0 2px 12px;color:#fff}
-.viewer-heading{flex:1;min-width:0;display:flex;align-items:baseline;gap:12px}
-.viewer-heading b{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.viewer-status{font-size:12px;color:rgba(255,255,255,.65);white-space:nowrap}
+/* Same place and look as the buttons viewer-preload.js draws inside the model page; these show before the page loads and after an error. */
+.viewer-actions{position:absolute;top:14px;right:14px;display:flex;gap:8px;z-index:1}
+.viewer-status{position:absolute;left:24px;right:24px;top:calc(50% + 34px);text-align:center;font-size:13px;color:rgba(255,255,255,.75)}
+.viewer-status:empty{display:none}
 .viewer-overlay[data-status=error] .viewer-status{color:#ff9b9b}
-.viewer-bar .viewer-icon.viewer-icon{display:grid;place-items:center;width:38px;height:36px;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff}
-.viewer-bar .viewer-icon:hover{background:rgba(255,255,255,.2)}
+.viewer-actions .viewer-icon.viewer-icon{display:grid;place-items:center;width:38px;height:36px;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.28);background:rgba(20,22,28,.62);color:#fff}
+.viewer-actions .viewer-icon.viewer-icon:hover{background:rgba(70,74,86,.9)}
 .viewer-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .viewer-stage{position:relative;flex:1;min-height:0;border-radius:14px;overflow:hidden;background:#15171d}
 .viewer-spinner{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:viewer-spin .9s linear infinite}
@@ -281,7 +281,7 @@ button.danger-solid:hover{background:#d93d42;border-color:#d93d42}
 .library>.toolbar>.selection #summary{margin-left:auto;font-size:12px;color:var(--muted)}
 .settings-dialog .claude-account span{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 
-/* 북마크 작가 새 모델 NEW */
+/* 북마크 업로더 새 모델 NEW */
 .author-chip{position:relative}
 .new-badge{position:absolute;left:-4px;top:-7px;z-index:2;padding:1px 6px;border-radius:999px;background:#ff3b5c;color:#fff;font-size:10px;font-weight:800;line-height:15px;letter-spacing:.3px;box-shadow:0 2px 6px rgba(255,59,92,.4);pointer-events:auto}
 .cover-box{position:relative}
@@ -295,3 +295,158 @@ body{padding-top:var(--titlebar-h);box-sizing:border-box}
 .update-panel{top:calc(var(--titlebar-h) + 14px)}
 .viewer-overlay{top:var(--titlebar-h)}
 #embeddedPanel{top:var(--titlebar-h)}
+/* Embedded browser menu in one row (58px). The page view starts right below it: TOP in src/browser.js = 34px title bar + 58px. */
+#embeddedPanel{height:58px;padding:8px 12px;display:block;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+#embeddedPanel[hidden]{display:none}
+#embeddedPanel .embedded-row{height:42px;min-height:0;flex-wrap:nowrap;min-width:max-content}
+#embeddedPanel button,#embeddedPanel label{flex:0 0 auto;white-space:nowrap}
+#embeddedPanel .icon-btn{display:grid;place-items:center;width:36px;height:34px;padding:0}
+#embeddedPanel .icon-btn:disabled{opacity:.38}
+#browserUrl{flex:1 1 120px;min-width:80px;max-width:420px}
+#browserBookmarkName{flex:0 0 150px;width:150px}
+#browserMessage{flex:0 1 auto;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#browserMessage:empty{display:none}
+/* Status line of the floating dock (replaces the removed footer status). */
+.dock-message{font-size:11px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere;padding:0 4px}
+.dock-message:empty,.floating-dock.idle .dock-message,.floating-dock.collapsed .dock-message{display:none}
+/* Room below the last row so the floating dock and the clear-selection button never cover it (the footer used to give this space). */
+main{padding-bottom:110px}
+/* Claude account sign-in popup */
+.claude-login{width:min(520px,calc(100vw - 48px))}
+.claude-login-code{display:flex;gap:8px;margin:0 0 12px}
+.claude-login-code input{flex:1;min-width:0}
+.claude-login-code button{flex:0 0 auto;white-space:nowrap}
+.claude-login-status.error{color:#e5484d}
+.claude-login .claude-login-status{margin:0 0 16px}
+/* Attachment rows: no drawn checkbox (the input stays for keyboard and screen readers); a row that will not be downloaded is dimmed and struck through. */
+.file{cursor:pointer}
+.file>.file-toggle{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);opacity:0}
+.file.off{opacity:.5}
+.file.off>span{text-decoration:line-through}
+.file:has(.file-toggle:focus-visible){outline:2px solid var(--accent);outline-offset:1px}
+/* 3ds Max import state on a card */
+.badge.max-state.done{background:rgba(34,197,94,.16);color:#15803d}
+.badge.max-state.failed{background:rgba(229,72,77,.16);color:#c62f35}
+.badge.max-state.sent{background:rgba(59,130,246,.14);color:#2563eb}
+.work .file{position:relative;grid-template-columns:minmax(0,1fr)}
+.work .file small,.work .file progress,.work .file .error{grid-column:1}
+/* Attachment list on a card: collapsed until the summary is opened. */
+.work>.files-box{grid-column:1/-1;min-width:0}
+.files-box>summary{cursor:pointer;font-size:12px;color:var(--muted);padding:4px 2px;user-select:none}
+.files-box>summary:hover{color:var(--text)}
+.files-box[open]>summary{margin-bottom:6px}
+/* 3ds Max import dialog and app-styled choice dialog */
+.max-import-dialog{width:min(620px,calc(100vw - 48px))}
+.mx-files{overflow-wrap:anywhere}
+.mx-heading{margin:16px 0 8px;font-size:13px}
+.mx-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;font-size:13px}
+.mx-grid label{display:flex;align-items:center;gap:8px;min-width:0}
+.mx-grid .mx-wide{grid-column:1/-1}
+.mx-grid select{flex:1;min-width:0}
+.mx-grid input[type=number]{width:96px}
+.max-import-dialog .confirm-note{margin:8px 0 0}
+.app-choice{width:min(520px,calc(100vw - 48px))}
+.app-choice-detail{white-space:pre-line;overflow-wrap:anywhere;margin:-8px 0 18px}
+.app-confirm-actions.stacked{flex-direction:column-reverse;align-items:stretch}
+.max-import-dialog .max-actions>div{display:flex;gap:8px}
+/* Card layout: title, then the status block (state, import badge, attachment list) in the middle, and the icon row pinned to the bottom. */
+.work>.card-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;min-width:0}
+.work>.card-status>.state{font-size:12px;font-weight:600}
+.work>.card-status>.files-box{flex:1 0 100%;min-width:0}
+.work>.actions.actions{margin-top:auto}
+/* '임포트 기록 삭제' sits just above the clear-selection button (bottom-left). */
+.floating-forget.floating-clear{bottom:76px}
+.floating-forget.floating-clear b{background:#e5484d;color:#fff}
+/* radio row in the 3ds Max import dialog (each choice has its own tooltip) */
+.mx-radios{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:13px}
+.mx-radios>label{display:inline-flex;align-items:center;gap:6px;cursor:help}
+/* Translation engine quick menu: engines with several models open a side list on hover (or click / arrow keys). */
+.tr-menu{position:relative;display:inline-block}
+.tr-menu-btn{display:inline-flex;align-items:center;gap:8px;min-width:150px;justify-content:space-between;padding:6px 12px;font-size:13px}
+.tr-menu-btn::after{content:'';width:0;height:0;border:4px solid transparent;border-top-color:currentColor;margin-top:4px;opacity:.7}
+.tr-menu-list,.tr-sub{position:absolute;z-index:160;min-width:180px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);box-shadow:0 16px 40px -10px rgba(0,0,0,.4)}
+.tr-menu-list{top:calc(100% + 6px);left:0;display:flex;flex-direction:column;gap:2px}
+.tr-menu-list[hidden]{display:none}
+.tr-group{position:relative;display:flex;flex-direction:column}
+.tr-sub{top:-7px;left:calc(100% + 2px);display:none;flex-direction:column;gap:2px;min-width:230px;max-height:min(420px,70vh);overflow-y:auto}
+.tr-group:hover>.tr-sub,.tr-group.open>.tr-sub,.tr-group:focus-within>.tr-sub{display:flex}
+/* a strip that keeps the side list open while the pointer crosses the gap */
+.tr-group::after{content:'';position:absolute;top:0;bottom:0;left:100%;width:8px}
+.tr-menu .tr-item{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:inherit;font-size:13px;text-align:left;white-space:nowrap;box-shadow:none}
+.tr-menu .tr-item:hover,.tr-menu .tr-item:focus-visible,.tr-group:hover>.tr-parent,.tr-group.open>.tr-parent{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.tr-menu .tr-item.current{font-weight:700;color:var(--accent)}
+.tr-menu .tr-item[data-value].current::after{content:'✓'}
+.tr-menu .tr-parent::after{content:'▸';opacity:.7}
+.collapse-bar>.tr-menu{margin:0 auto 0 -2px}
+.collapse-bar .tr-menu-btn{min-height:0;height:28px;padding:3px 10px;font-size:12px;border-radius:8px}
+/* Compact top: the app mark, the author buttons and the account controls share one row (the banner with the app name is gone). */
+.top-row{display:flex;align-items:center;gap:10px;min-width:0}
+.top-row[hidden]{display:none}
+.top-row>.brand{flex:0 0 auto;width:34px;height:34px;font-size:19px}
+.top-row>.brand span{font-size:12px;right:3px;bottom:0}
+.top-row>.default-author-buttons{flex:1 1 auto;min-width:0;align-items:center}
+.top-row>.account{flex:0 0 auto;margin:0;gap:6px}
+.top-row>.account>#account{font-size:12px;white-space:nowrap;max-width:150px}
+main>.top-row{grid-column:1/-1;grid-row:1}
+/* Compact list toolbar: selection buttons, a small filter button, the selection summary, then search / sort / thumbnail size / refresh in one row. */
+.library>.toolbar>.selection{display:contents}
+.library>.toolbar>.selection>button{order:1}
+.library>.toolbar>.filter-details.filter-details{order:2;flex:0 0 auto;min-width:0;margin:0;padding:0 10px;border-radius:999px}
+.library>.toolbar>.filter-details[open]{flex-basis:auto}
+.library>.toolbar>.filter-details>summary{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;font-weight:700;list-style:none;cursor:pointer}
+.library>.toolbar>.filter-details>summary::-webkit-details-marker{display:none}
+.library>.toolbar>.filter-details>summary::after{content:'';width:0;height:0;border:4px solid transparent;border-top-color:currentColor;margin-top:4px;opacity:.7}
+#activeFilterCount:empty{display:none}
+#activeFilterCount{min-width:16px;padding:0 5px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;line-height:16px;text-align:center}
+.library>.toolbar>.selection>#summary{order:3;flex:1 1 60px;min-width:0;width:auto;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.library>.toolbar>.list-search{order:4}
+.library>.toolbar>.thumbnail-controls{order:5}
+.library>.toolbar>#refresh{order:6}
+.toolbar .list-search #search{width:180px}
+.library>.toolbar>.filter-details>#filter{width:min(520px,calc(100vw - 60px));border-radius:14px}
+.library>.toolbar>.filter-details[open]{box-shadow:none}
+/* Tabs row: list tabs on the left, the translation menu at the far right. */
+.tabs-row{display:flex;align-items:center;gap:10px;min-width:0}
+.tabs-row>#translationStatus{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tabs-row>.tr-menu{flex:0 0 auto;margin:0}
+.tabs-row .tr-menu-btn{min-height:0;height:32px;padding:4px 12px;font-size:12px}
+/* the menu hangs from the right edge, so its side lists open to the left */
+.tabs-row .tr-menu-list{left:auto;right:0}
+.tabs-row .tr-sub{left:auto;right:calc(100% + 2px)}
+.tabs-row .tr-group::after{left:auto;right:100%}
+.tabs-row .tr-parent::after{content:'◂';order:-1}
+.tr-menu .tr-item.tr-off{margin-top:4px;border-top:1px solid var(--line);border-radius:0 0 8px 8px;padding-top:9px;color:var(--muted)}
+.collapse-bar>.theme-picker{margin-left:auto}
+/* Search: a magnifier button; the input unfolds beside it. */
+.toolbar .list-search{gap:6px}
+.toolbar .list-search #search{transition:width .15s,opacity .15s}
+.toolbar .list-search:not(.open) #search{width:0;min-width:0;padding-left:0;padding-right:0;border-color:transparent;opacity:0;pointer-events:none;margin-right:-6px}
+.toolbar #searchToggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.toolbar #searchToggle.active{color:var(--accent);border-color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.toolbar .list-search #search{transition:none}}
+/* Theme select sits just left of the translation menu on the tabs row (the old top bar is gone). */
+.tabs-row>.theme-select{flex:0 0 auto;min-height:0;height:32px;padding:4px 8px;font-size:12px;width:auto}
+.top-row>.brand{cursor:default}
+/* Help: one short line per feature */
+.help-list{list-style:none;margin:0;padding:0;display:grid;gap:2px;max-height:min(62vh,560px);overflow:auto}
+.help-list li{display:grid;grid-template-columns:128px minmax(0,1fr);gap:12px;align-items:baseline;padding:7px 2px;border-top:1px solid var(--line);font-size:12.5px;line-height:1.5}
+.help-list li:first-child{border-top:0}
+.help-list li>b{color:var(--text);font-size:13px}
+.help-list li>span{color:var(--muted)}
+.help-list li>span b{color:var(--text);font-weight:700}
+.help-dialog{width:min(600px,calc(100vw - 32px))}
+/* Bookmark buttons: drag to reorder. The pressed button lifts and follows the pointer, the others glide aside, and it settles into its slot on release. */
+.default-author-buttons .author-chip{touch-action:none;user-select:none}
+.default-author-buttons .author-chip>button[data-author-id]{transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s ease,background .12s,border-color .12s}
+.default-author-buttons .author-chip.lifted{z-index:6;pointer-events:none}
+.default-author-buttons .author-chip.lifted>button[data-author-id]{transform:scale(1.06);box-shadow:0 14px 28px -10px rgba(0,0,0,.45),0 0 0 2px color-mix(in srgb,var(--accent) 55%,transparent)}
+.default-author-buttons .author-chip.settling{z-index:6}
+.default-author-buttons.reordering .author-remove,.default-author-buttons.reordering .new-badge{opacity:0;pointer-events:none;transition:opacity .12s}
+.default-author-buttons.reordering .author-chip{will-change:transform}
+body.author-dragging,body.author-dragging *{cursor:grabbing!important}
+@media (prefers-reduced-motion:reduce){.default-author-buttons .author-chip>button[data-author-id]{transition:none}}
+/* Sort toggle: arrow down = newest first, arrow up (flipped) = oldest first */
+.toolbar #sortToggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+.toolbar #sortToggle.asc svg{transform:rotate(180deg)}
+.toolbar #sortToggle.asc{color:var(--accent);border-color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.toolbar #sortToggle svg{transition:none}}
