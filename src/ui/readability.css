@@ -104,3 +104,9 @@ footer{position:static}
 .floating-clear{position:fixed;left:24px;bottom:24px;z-index:16;display:inline-flex;align-items:center;gap:7px;padding:9px 16px;font-size:13px;font-weight:700;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
 .floating-clear[hidden]{display:none}
 .floating-clear b{min-width:22px;padding:1px 7px;border-radius:999px;font-size:12px;text-align:center}
+/* First run / empty list: point at the built-in author shortcuts (uses each theme's --accent). */
+.no-list .default-author-buttons:not(:empty){align-items:center;padding:10px 12px;border-radius:20px;outline:2px solid var(--accent);outline-offset:0;background:color-mix(in srgb,var(--accent) 9%,transparent);animation:author-hint 1.8s ease-in-out infinite}
+.no-list .default-author-buttons:not(:empty)::before{content:'시작하기 · 작가를 선택하면 배포 자료를 불러옵니다';margin:0 6px 0 4px;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+.no-list .default-author-buttons button:not(.active){border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+@keyframes author-hint{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 20%,transparent)}}
+@media (prefers-reduced-motion:reduce){.no-list .default-author-buttons{animation:none}}

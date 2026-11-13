@@ -114,3 +114,5 @@ Aero는 Frutiger Aero 스타일로, 옅은 하늘색 바탕에 반투명 흰 유
 UI 글꼴은 나눔스퀘어라운드 Bold이며 `src/ui/fonts/NanumSquareRoundB.ttf`로 앱에 내장되어 있어 글꼴을 따로 설치할 필요가 없습니다(`src/ui/fonts.css`). 저작권은 NAVER Corporation에 있으며 SIL Open Font License 1.1로 배포됩니다. 출처는 `src/ui/fonts/NOTICE-NanumSquareRound.txt`에 있습니다.
 
 배포 자료를 하나 이상 선택하면 왼쪽 아래에 **✕ 선택 해제** 플로팅 버튼(선택 개수 표시)이 나타납니다. 누르면 전체 목록·북마크에서 선택한 게시물을 모두 해제합니다. 작업 중에는 비활성화됩니다.
+
+처음 실행해 배포 자료 목록이 비어 있으면 위쪽 기본 제공 작가 버튼 영역이 강조 테두리와 "시작하기" 안내로 표시됩니다. 목록을 불러오면 강조가 사라집니다.

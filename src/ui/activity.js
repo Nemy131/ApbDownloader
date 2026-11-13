@@ -76,6 +76,7 @@ function renderActivity(){
  $('dockCancel').disabled=!state.busy;
  $('floatingDock').classList.toggle('busy',!!state.busy);
  renderFloatingClear();
+ document.documentElement.classList.toggle('no-list',!(state.works||[]).length&&!state.busy);
  updateBackToTop();
 }
 // Floating 'clear selection' button (bottom-left) while any post is selected.
