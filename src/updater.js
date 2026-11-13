@@ -125,6 +125,18 @@ async function reportPreviousResult({ win, dataDir, app }) {
   else send({ phase: 'error', version: r.version, message: r.message || '새 파일이 적용되지 않았습니다. data/update.log를 확인해 주세요.' }, true);
 }
 
+// Release notes in their own dialog. Without notes, the GitHub releases page opens instead.
+async function showNotes({ dialog, shell, win, info, repo }) {
+  if (!info.notes) { await shell?.openExternal(releasesPage(repo)).catch(() => {}); return; }
+  if (!win || win.isDestroyed()) return;
+  const notes = info.notes.length > 3000 ? info.notes.slice(0, 3000) + '\n…' : info.notes;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'none', title: '업데이트 로그', buttons: ['돌아가기', 'GitHub에서 전체 기록 보기'], defaultId: 0, cancelId: 0, noLink: true,
+    message: `버전 ${info.version} 변경 사항`, detail: notes
+  });
+  if (response === 1) await shell?.openExternal(releasesPage(repo)).catch(() => {});
+}
+
 // Called once after the main window has loaded. Never throws.
 async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog }) {
   const send = sender(win);
@@ -140,17 +152,16 @@ async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog })
     let skipped = ''; try { skipped = JSON.parse(await fsp.readFile(skipFile, 'utf8')).version || ''; } catch {}
     if (skipped === info.version) return;
     if (!win || win.isDestroyed()) return;
-    const notes = info.notes ? '\n\n변경 사항:\n' + info.notes.slice(0, 900) : '';
-    // "업데이트 로그 보기" opens the GitHub release notes in the browser and asks again.
+    // "업데이트 로그 보기" shows this release's notes in a separate dialog, then asks again.
     let response = process.env.APLAYBOX_UPDATE_AUTOACCEPT === '1' ? 0 : 3;
     while (response === 3) {
       if (!win || win.isDestroyed()) return;
       response = (await dialog.showMessageBox(win, {
         type: 'info', title: '업데이트 확인', buttons: ['지금 업데이트', '나중에', '이 버전 건너뛰기', '업데이트 로그 보기'], defaultId: 0, cancelId: 1, noLink: true,
         message: `새 버전 ${info.version}이 있습니다. (현재 ${app.getVersion()})`,
-        detail: '지금 업데이트하면 파일을 받은 뒤 앱을 다시 시작합니다. 로그인 정보·기록·북마크·설정이 있는 data 폴더는 그대로 유지됩니다.' + notes
+        detail: '지금 업데이트하면 파일을 받은 뒤 앱을 다시 시작합니다. 로그인 정보·기록·북마크·설정이 있는 data 폴더는 그대로 유지됩니다.'
       })).response;
-      if (response === 3) await shell?.openExternal(releasesPage(repo)).catch(() => {});
+      if (response === 3) await showNotes({ dialog, shell, win, info, repo });
     }
     if (response === 2) { await fsp.writeFile(skipFile, JSON.stringify({ version: info.version }), 'utf8'); return; }
     if (response !== 0) return;

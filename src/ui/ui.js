@@ -37,8 +37,9 @@ function render(){
   if(state.busy){toast('현재 작업이 끝난 뒤 작가를 전환해 주세요.');return;}
   const result=await window.aplay.call('load',a.url,$('scope').value);if(!result.ok){toast(result.error);return;}
   $('url').value=a.url;activeTab='all';$('search').value='';render();
- };shortcuts.append(button);}}
- for(const button of shortcuts.children){const active=String(state.author||'')===button.dataset.authorId;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
+ };shortcuts.append(button);}
+  const more=text('button','더 찾아보기 →','quiet more-authors');more.type='button';more.title='내장 Aplaybox 탐색기에서 작가 목록 페이지 열기';more.onclick=()=>openEmbedded('https://www.aplaybox.com/author');shortcuts.append(more);}
+ for(const button of shortcuts.querySelectorAll('button[data-author-id]')){const active=String(state.author||'')===button.dataset.authorId;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
 
   if(window.listDragActive)return;
  const filterCount=document.querySelectorAll('#filter input:checked').length;$('activeFilterCount').textContent=filterCount?filterCount+'개 적용':'전체 표시';

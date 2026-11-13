@@ -110,3 +110,6 @@ footer{position:static}
 .no-list .default-author-buttons button:not(.active){border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
 @keyframes author-hint{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 20%,transparent)}}
 @media (prefers-reduced-motion:reduce){.no-list .default-author-buttons{animation:none}}
+/* "더 찾아보기" after the built-in author shortcuts: same pill, dashed outline so it reads as a link, not an author. */
+.default-author-buttons button.more-authors.more-authors{border:1px dashed color-mix(in srgb,var(--accent) 60%,transparent);color:var(--accent);background:transparent;font-weight:600}
+.default-author-buttons button.more-authors:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}

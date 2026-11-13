@@ -33,3 +33,30 @@ test('fetchLatest rejects malformed repo names without a request', async () => {
   const json = await fetchLatest('o/r', async url => { assert.equal(url, 'https://api.github.com/repos/o/r/releases/latest'); return { ok: true, json: async () => ({ tag_name: 'v2.0.0' }) }; });
   assert.equal(json.tag_name, 'v2.0.0');
 });
+
+test('update prompt omits release notes; "업데이트 로그 보기" shows them in a separate dialog', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { checkOnStartup } = require('../src/updater');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apb-upd-test-'));
+  const realFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ tag_name: 'v9.0.0', body: '- 새 기능 설명', assets: [asset] }) });
+  const shown = [], opened = [], answers = [3, 0, 3, 1, 1];
+  try {
+    await checkOnStartup({
+      app: { isPackaged: true, getVersion: () => '1.0.0', quit() {} },
+      dialog: { showMessageBox: async (_w, o) => { shown.push(o); return { response: answers.shift() }; } },
+      shell: { openExternal: async u => { opened.push(u); } },
+      win: { isDestroyed: () => false, webContents: { send() {} }, setProgressBar() {} },
+      repo: 'o/r', dataDir
+    });
+  } finally { global.fetch = realFetch; fs.rmSync(dataDir, { recursive: true, force: true }); }
+  assert.equal(shown.length, 5);
+  assert.equal(shown[0].title, '업데이트 확인');
+  assert.doesNotMatch(shown[0].detail, /새 기능 설명/);
+  assert.equal(shown[1].title, '업데이트 로그');
+  assert.match(shown[1].detail, /새 기능 설명/);
+  assert.equal(shown[2].title, '업데이트 확인');
+  assert.equal(shown[3].title, '업데이트 로그');
+  assert.deepEqual(opened, ['https://github.com/o/r/releases']);
+  assert.equal(shown[4].title, '업데이트 확인');
+});
