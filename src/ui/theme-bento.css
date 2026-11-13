@@ -1,0 +1,178 @@
+/* Bento Grid theme (light dashboard style): soft grey canvas, borderless white tiles, one blue hero tile
+   for job status, and small colored tags for sections and statuses.
+   Loaded instead of the other themes (see theme.js); builds on style.css + readability.css. */
+:root{
+ color-scheme:light;
+ --canvas:#e7e7e9;--tile:#ffffff;--inset:#f6f6f7;--inset-edge:#ececee;--tile-radius:20px;
+ --text:#111114;--muted:#6e6e76;--faint:#a3a3aa;--line:#ececee;--panel:#ffffff;
+ --blue:#1a7cff;--blue-2:#4aa8ff;--orange:#f7871b;--purple:#a77bf3;--green:#1fc160;--red:#f2555a;--yellow:#f5b70a;
+ --accent:var(--blue);--ink:#111114;
+ --card-shadow:0 0 0 1px rgba(17,17,20,.035),0 1px 2px rgba(17,17,20,.07),0 8px 22px -6px rgba(17,17,20,.2);
+ --card-shadow-hover:0 0 0 1px rgba(17,17,20,.05),0 2px 4px rgba(17,17,20,.08),0 14px 30px -8px rgba(17,17,20,.28);
+}
+html,body{background:var(--canvas)}
+body{color:var(--text)}
+
+/* Top strip and header tile */
+.collapse-bar{background:transparent;border-bottom:0;padding:10px 22px 0}
+header{margin:10px 22px 0;padding:14px 20px;background:var(--tile);color:var(--text);border:0;border-radius:var(--tile-radius);box-shadow:none}
+h1{color:var(--text);font-weight:800;letter-spacing:-.5px;background:none;-webkit-background-clip:border-box;filter:none}
+.brand{border:0;border-radius:12px;background:var(--blue);color:#fff;box-shadow:none}
+.brand span{color:#dceaff}
+.account span{color:var(--muted)}
+
+/* Bento grid for the setup area */
+main{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:auto;gap:14px;align-items:start;padding:14px 22px 0}
+main>*{grid-column:1/-1;min-width:0}
+main>.default-author-buttons{grid-column:1/-1;grid-row:1}
+main>#sourcePanel{grid-column:1/span 8;grid-row:2/span 2;align-self:stretch}
+main>#authorSection{grid-column:9/span 4;grid-row:2}
+main>#settingsPanel{grid-column:9/span 4;grid-row:3}
+main>.library{grid-row:4}
+main>.default-author-buttons:empty{display:none}
+@media(max-width:1100px){main>#sourcePanel,main>#authorSection,main>#settingsPanel{grid-column:1/-1;grid-row:auto}}
+
+/* Tiles: white, borderless; sections marked by a colored disclosure marker */
+.author-section,.settings,.source,.filter-details,.library>.toolbar,footer,.floating-dock{background:var(--tile);border:0;border-radius:var(--tile-radius);box-shadow:none;color:var(--muted)}
+.source{padding:16px 18px}
+.source>label{font-size:15px;font-weight:800;color:var(--text)}
+.author-section,.settings{padding:2px 16px}
+.filter-details{border-radius:16px}
+summary,.author-section>summary,#downloadSettings>summary,.filter-details>summary{color:var(--text);font-weight:800}
+.author-section>summary::marker{color:var(--orange)}
+#downloadSettings>summary::marker{color:var(--blue)}
+.filter-details>summary::marker{color:var(--purple)}
+.author-section>summary:hover,#downloadSettings>summary:hover,.filter-details>summary:hover{color:#000}
+summary span,#downloadSettings>summary span,.filter-details>summary span{color:var(--muted);font-weight:600}
+.author-bookmarks,.settings details>.row,.filter-checklist{color:var(--text)}
+p,.path>span{color:var(--muted)}
+.path>span::before{color:var(--text)}
+h2,.toolbar h2{color:var(--text);font-weight:800;letter-spacing:-.4px}
+.toolbar h2{font-size:20px}
+.toolbar h2 span{color:var(--blue);font-size:14px}
+
+/* Library: segmented tabs + toolbar tile */
+.library{gap:10px}
+.list-tabs{display:inline-flex;align-self:flex-start;gap:4px;padding:4px;border:0;border-radius:14px;background:var(--tile);margin-bottom:4px}
+.list-tabs button{background:transparent;border:0;border-radius:10px;color:var(--muted)}
+.list-tabs button:hover{background:var(--inset);color:var(--text)}
+.list-tabs button.active{background:var(--blue);color:#fff}
+.library>.toolbar{padding:10px 14px;margin:0}
+.thumbnail-controls,.column-control,.translate-toggle,.drag-hint,.selection #summary,#translationStatus,#browserUrl{color:var(--muted)}
+#browserMessage{color:var(--blue)}
+.filter-checklist label{background:var(--inset);border:1px solid var(--inset-edge);border-radius:10px}
+.filter-checklist label:has(input:checked){background:#eaf3ff;border-color:#b9d7ff;color:#0b5bd3}
+
+/* Controls: white outline buttons, blue primary */
+button{background:#fff;color:var(--text);border:1px solid #e3e3e6;border-radius:10px;box-shadow:none;text-shadow:none;font-weight:600;transition:background .12s,border-color .12s}
+button:hover{background:var(--inset);border-color:#d6d6da}
+button:disabled{opacity:.4}
+button.quiet{background:transparent}
+button.quiet:hover{background:var(--inset)}
+button.primary,button.primary:hover{background:var(--blue);border-color:var(--blue);color:#fff}
+button.primary:hover{background:#0f6ae6}
+button.danger{background:#fff1f1;border-color:#ffd3d5;color:#d92d33}
+#browse,#browse:hover{background:#111114;border-color:#111114;color:#fff}
+#browse:hover{background:#2a2a30}
+#backToTop,#backToTop:hover{background:#fff;border-color:#e3e3e6;color:var(--text);border-radius:14px;box-shadow:0 8px 22px rgba(17,17,20,.12)}
+.default-author-buttons button{background:#fff;border-color:transparent;color:var(--text);border-radius:999px}
+.default-author-buttons button:hover{background:var(--inset)}
+.default-author-buttons button.active{background:var(--blue);color:#fff}
+input,select{background:var(--inset);color:var(--text);border:1px solid var(--inset-edge);border-radius:10px;box-shadow:none}
+input::placeholder{color:var(--faint)}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+input[type=checkbox]{accent-color:var(--blue)}
+
+/* Cards as uniform bento tiles: same tile size and a filled, same-size thumbnail */
+.list{gap:14px;border-top:0}
+.work{background:var(--tile);border:1.5px solid transparent;border-radius:18px;box-shadow:var(--card-shadow);transition:border-color .12s,background .12s,box-shadow .15s}
+.work:hover{border-color:#d9d9de;box-shadow:var(--card-shadow-hover)}
+.work.selected{border-color:var(--blue);background:#f5f9ff;box-shadow:0 1px 2px rgba(26,124,255,.08),0 10px 26px -8px rgba(26,124,255,.28)}
+.work.drag-selected{border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue);background:#eaf3ff}
+.work.drag-unselected{border-color:transparent;box-shadow:var(--card-shadow)}
+.selection-marquee{border:1px solid var(--blue);background:rgba(26,124,255,.10);border-radius:8px}
+.work>input{box-shadow:0 0 0 4px #fff;border-radius:4px}
+.work>.cover,.cover{background:var(--inset);border-radius:14px;box-shadow:none}
+.work>.cover{object-fit:cover}
+.info .title{color:var(--text);font-weight:800;letter-spacing:-.2px}
+.meta{color:var(--muted)}
+.work .message{color:var(--faint)}
+.work>.actions{border-top:1px solid var(--line);row-gap:8px;justify-content:flex-start}
+/* Status as a colored tag on its own line (the 100% right margin forces the buttons below it). */
+.work>.actions>.state{display:inline-flex;flex:0 0 auto;margin-right:100%;padding:3px 10px;border-radius:7px;background:#ededf0;color:#55555c;font-size:11px;font-weight:700;white-space:nowrap}
+.work .state[data-status="완료"]{background:var(--green);color:#fff}
+.work .state[data-status="실패"],.work .state[data-status="조회 실패"],.work .state[data-status="취소"]{background:var(--red);color:#fff}
+.work .state[data-status="사용자 조작 필요"]{background:var(--yellow);color:#3d2c00}
+.work .state[data-status="다운로드 중"],.work .state[data-status="다운로드 대기"]{background:var(--blue);color:#fff}
+.work .state[data-status="조건 확인 중"],.work .state[data-status="조건 처리 중"],.work .state[data-status="파일 확인 중"],.work .state[data-status="파일 선택 가능"]{background:var(--purple);color:#fff}
+.work .actions button{white-space:nowrap}
+.badge{border:0;color:#55555c;background:#ededf0;border-radius:7px;padding:3px 8px}
+.badge.met{color:#0e8a43;background:#e3f8ec}
+.file{background:var(--inset);border:1px solid var(--inset-edge);border-radius:12px}
+.file small{color:var(--muted)}
+.file .error{color:#d92d33}
+.file progress+small.error{color:var(--blue)}
+
+/* Progress */
+progress{-webkit-appearance:none;appearance:none;height:8px;border:0;border-radius:999px;overflow:hidden;background:#ececee}
+progress::-webkit-progress-bar{background:#ececee;border-radius:999px}
+progress::-webkit-progress-value{background:var(--blue);border-radius:999px}
+progress:indeterminate{background:linear-gradient(90deg,#ececee 0%,#9cc6ff 50%,#ececee 100%);background-size:200% 100%;animation:bento-sweep 1.2s linear infinite}
+progress:indeterminate::-webkit-progress-bar{background:transparent}
+@keyframes bento-sweep{to{background-position:-200% 0}}
+
+/* Footer tile; job status is the blue hero tile */
+footer{margin:16px 22px 14px;padding:14px 16px;gap:10px 14px}
+.status{color:var(--muted)}
+.dot{background:#c9c9cf}.dot.active{background:var(--blue)}
+.footer-help summary,.footer-help small,.dock-summary{color:var(--muted)}
+.activity{--tone:#fff;background:linear-gradient(160deg,#1a7cff 0%,#4aa8ff 100%);color:#fff;border:0;border-radius:18px;padding:12px 14px;box-shadow:none}
+.activity[data-tone=idle]{background:var(--inset);color:var(--text)}
+.dock-top>.activity{background:linear-gradient(160deg,#1a7cff 0%,#4aa8ff 100%)}
+.dock-top>.activity[data-tone=idle]{background:var(--inset)}
+.activity-phase{color:#fff;font-size:16px;font-weight:800;letter-spacing:-.2px}
+.activity[data-tone=idle] .activity-phase{color:var(--text)}
+.activity-detail{color:rgba(255,255,255,.85)}
+.activity[data-tone=idle] .activity-detail{color:var(--muted)}
+.activity-dot{background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.3)}
+.activity[data-tone=idle] .activity-dot{background:#c9c9cf;box-shadow:none}
+.activity[data-tone=warn] .activity-dot{background:var(--yellow)}
+.activity[data-tone=error] .activity-dot{background:var(--red)}
+.activity[data-tone=done] .activity-dot{background:#7dffb0}
+.chip{background:rgba(255,255,255,.18);border:0;color:#fff;border-radius:7px;padding:3px 9px}
+.chip b{color:#fff}
+.chip.zero{opacity:.55}
+.chip[data-key=check]:not(.zero){background:var(--purple)}
+.chip[data-key=active]:not(.zero){background:rgba(255,255,255,.95);color:#0b5bd3}
+.chip[data-key=active]:not(.zero) b{color:#0b5bd3}
+.chip[data-key=waiting]:not(.zero){background:var(--yellow);color:#3d2c00}
+.chip[data-key=waiting]:not(.zero) b{color:#3d2c00}
+.chip[data-key=failed]:not(.zero){background:var(--red)}
+.chip[data-key=done]:not(.zero){background:var(--green)}
+.activity progress,.activity progress::-webkit-progress-bar{background:rgba(255,255,255,.3)}
+.activity progress::-webkit-progress-value{background:#fff}
+.activity progress:indeterminate{background:linear-gradient(90deg,rgba(255,255,255,.25) 0%,rgba(255,255,255,.85) 50%,rgba(255,255,255,.25) 100%);background-size:200% 100%}
+.activity .activity-ack{background:#fff;border-color:#fff;color:#0b5bd3}
+.activity .activity-ack:hover{background:#eaf3ff}
+.floating-dock{width:min(340px,calc(100vw - 48px));gap:6px;border-radius:18px;padding:8px;box-shadow:0 12px 32px rgba(17,17,20,.18)}
+.dock-top>.activity{padding:6px 10px;border-radius:12px;gap:4px}
+.dock-top .activity-phase{font-size:13px}
+.dock-top .activity-head{flex-wrap:nowrap}
+.dock-top .activity-phase{white-space:nowrap}
+.dock-top .activity-detail{font-size:11px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dock-top .activity-ack{padding:2px 10px;flex-shrink:0}
+.dock-top .chip{padding:1px 7px;font-size:11px}
+.dock-summary{display:none}
+.dock-actions button{padding:5px 6px;font-size:12px;min-height:0}
+.dock-toggle{padding:2px 8px}
+.floating-dock.busy{box-shadow:0 18px 44px rgba(26,124,255,.28)}
+.dock-toggle{border-radius:10px}
+#toast{background:#111114;border:0;color:#fff;border-radius:16px;box-shadow:0 14px 34px rgba(17,17,20,.3)}
+#embeddedPanel{background:var(--canvas);border-bottom:1px solid #dcdce0}
+.theme-picker select{background:#fff}
+
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c6c6cc;border:3px solid var(--canvas);border-radius:999px}
+::-webkit-scrollbar-thumb:hover{background:#a9a9b0}
+@media (prefers-reduced-motion:reduce){progress:indeterminate{animation:none}button,.work{transition:none}}

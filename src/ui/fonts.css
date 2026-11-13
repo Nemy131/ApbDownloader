@@ -1,0 +1,4 @@
+/* Embedded NanumSquareRound Bold for all UI text (both themes). The font ships with the app; no system install needed. */
+@font-face{font-family:'NanumSquareRound';src:url('fonts/NanumSquareRoundB.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:block}
+html body,button,input,select,textarea,summary{font-family:'NanumSquareRound','Malgun Gothic',sans-serif}
+body{font-synthesis:none}

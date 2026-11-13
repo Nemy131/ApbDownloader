@@ -1,0 +1,11 @@
+{
+  "name": "aplaybox-downloader",
+  "version": "1.1.0",
+  "description": "Aplaybox 작가 자료 다운로드 도구",
+  "main": "src/main.js",
+  "private": true,
+  "updateRepo": "homerthegood/AplayboxDownloader",
+  "repository": "github:homerthegood/AplayboxDownloader",
+  "scripts": { "start": "electron .", "test": "node --test test/*.test.js" },
+  "devDependencies": { "electron": "45.3.1" }
+}

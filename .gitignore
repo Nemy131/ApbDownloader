@@ -1,0 +1,11 @@
+vendor/
+dist/
+data/
+test-data/
+node_modules/
+*.part
+*.log
+build/
+release/
+research/
+*.zip
