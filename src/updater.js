@@ -34,6 +34,8 @@ function pickUpdate(release, currentVersion) {
   return { version, notes: String(release.body || '').trim(), url: asset.browser_download_url, size: Number(asset.size) || 0, sha256, page: release.html_url || '' };
 }
 
+const releasesPage = repo => `https://github.com/${repo}/releases`;
+
 async function fetchLatest(repo, fetchImpl = fetch) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '')) return null;
   const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 10000);
@@ -124,7 +126,7 @@ async function reportPreviousResult({ win, dataDir, app }) {
 }
 
 // Called once after the main window has loaded. Never throws.
-async function checkOnStartup({ app, dialog, win, repo, dataDir, onLog }) {
+async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog }) {
   const send = sender(win);
   let info = null;
   try {
@@ -139,11 +141,17 @@ async function checkOnStartup({ app, dialog, win, repo, dataDir, onLog }) {
     if (skipped === info.version) return;
     if (!win || win.isDestroyed()) return;
     const notes = info.notes ? '\n\n변경 사항:\n' + info.notes.slice(0, 900) : '';
-    const response = process.env.APLAYBOX_UPDATE_AUTOACCEPT === '1' ? 0 : (await dialog.showMessageBox(win, {
-      type: 'info', title: '업데이트 확인', buttons: ['지금 업데이트', '나중에', '이 버전 건너뛰기'], defaultId: 0, cancelId: 1, noLink: true,
-      message: `새 버전 ${info.version}이 있습니다. (현재 ${app.getVersion()})`,
-      detail: '지금 업데이트하면 파일을 받은 뒤 앱을 다시 시작합니다. 로그인 정보·기록·북마크·설정이 있는 data 폴더는 그대로 유지됩니다.' + notes
-    })).response;
+    // "업데이트 로그 보기" opens the GitHub release notes in the browser and asks again.
+    let response = process.env.APLAYBOX_UPDATE_AUTOACCEPT === '1' ? 0 : 3;
+    while (response === 3) {
+      if (!win || win.isDestroyed()) return;
+      response = (await dialog.showMessageBox(win, {
+        type: 'info', title: '업데이트 확인', buttons: ['지금 업데이트', '나중에', '이 버전 건너뛰기', '업데이트 로그 보기'], defaultId: 0, cancelId: 1, noLink: true,
+        message: `새 버전 ${info.version}이 있습니다. (현재 ${app.getVersion()})`,
+        detail: '지금 업데이트하면 파일을 받은 뒤 앱을 다시 시작합니다. 로그인 정보·기록·북마크·설정이 있는 data 폴더는 그대로 유지됩니다.' + notes
+      })).response;
+      if (response === 3) await shell?.openExternal(releasesPage(repo)).catch(() => {});
+    }
     if (response === 2) { await fsp.writeFile(skipFile, JSON.stringify({ version: info.version }), 'utf8'); return; }
     if (response !== 0) return;
 

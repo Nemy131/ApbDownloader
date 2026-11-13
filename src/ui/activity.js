@@ -75,8 +75,13 @@ function renderActivity(){
  $('dockSummary').textContent=$('summary').textContent;
  $('dockCancel').disabled=!state.busy;
  $('floatingDock').classList.toggle('busy',!!state.busy);
+ renderFloatingClear();
  updateBackToTop();
 }
+// Floating 'clear selection' button (bottom-left) while any post is selected.
+function selectedWorks(){return [...new Map([...(state.bookmarks||[]),...(state.works||[])].map(w=>[w.id,w])).values()].filter(w=>w.selected);}
+function renderFloatingClear(){const n=selectedWorks().length,b=$('floatingClear');b.hidden=!n;b.disabled=!!state.busy;$('floatingClearCount').textContent=n?String(n):'';b.title=state.busy?'작업 중에는 선택을 바꿀 수 없습니다':'선택한 배포 자료 '+n+'개를 모두 해제합니다';}
+$('floatingClear').onclick=()=>{const list=selectedWorks();if(list.length)call('selection',list.map(w=>({id:w.id,selected:false})));};
 for(const [dock,target] of [['dockStart','start'],['dockRetry','retry'],['dockCancel','cancel']])$(dock).onclick=()=>$(target).click();
 (()=>{const dock=$('floatingDock'),toggle=$('dockToggle');
  const apply=collapsed=>{dock.classList.toggle('collapsed',collapsed);toggle.textContent=collapsed?'▴':'▾';toggle.setAttribute('aria-expanded',String(!collapsed));toggle.title=collapsed?'현황 펼치기':'현황 접기';};

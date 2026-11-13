@@ -15,7 +15,9 @@ if(process.platform==='win32')app.setAppUserModelId('Aplaybox.Downloader');
 let completionNotification;
 let win, site, ses, controller, busy = false, job = null, saving = Promise.resolve(), sessionSave = Promise.resolve();
 let state = { works: [], author: '', message: '작가 주소를 입력해 목록을 불러오세요.', complete: false };
-let config = { folder: '', concurrency: 2, notifyOnComplete: true, autoTranslate:false, accounts: {} }, history = {};
+let authorLists = {}; // `${uid}|${scope}` -> { uid, scope, sourceUrl, fetchedAt, works } — lists already loaded once
+const AUTHOR_LIST_LIMIT = 30;
+let config = { folder: '', concurrency: 2, notifyOnComplete: true, autoTranslate:true, accounts: {} }, history = {};
 let activeUid = '', refreshTail = Promise.resolve();
 let bookmarks=[],authorBookmarks=[],embeddedBrowser;
 function allWorks(){return [...new Map([...bookmarks,...state.works].map(w=>[w.id,w])).values()];}
@@ -28,7 +30,21 @@ function snapshot() { return { ...state, defaultAuthors, autoTranslate:config.au
 function emit() { if (win && !win.isDestroyed()) win.webContents.send('state', snapshot()); }
 async function jsonRead(name, fallback) { try { return JSON.parse(await fs.readFile(path.join(dataDir, name), 'utf8')); } catch { return fallback; } }
 function atomic(name, value) { saving = saving.catch(() => {}).then(async () => { const target = path.join(dataDir, name); await fs.writeFile(target + '.tmp', JSON.stringify(value, null, 2), 'utf8'); await fs.rename(target + '.tmp', target); }); return saving; }
-async function persist() { const saved = snapshot();bookmarks=bookmarks.map(b=>state.works.find(w=>w.id===b.id)||b);await atomic('bookmarks.json',saved.bookmarks);delete saved.bookmarks; delete saved.settings; delete saved.account; delete saved.dataDir; return atomic('queue.json', saved); }
+function rememberList() {
+  if (!state.complete || !state.author || !state.works?.length) return;
+  const key = state.author + '|' + (state.scope || 'all'); const prev = authorLists[key];
+  authorLists[key] = { uid: state.author, scope: state.scope || 'all', sourceUrl: state.sourceUrl || '', fetchedAt: state.fetchedAt || prev?.fetchedAt || new Date().toISOString(), usedAt: new Date().toISOString(), works: state.works.map(w => ({ ...w, files: (w.files || []).map(({ url, ...f }) => f) })) };
+  const keys = Object.keys(authorLists).sort((a, b) => String(authorLists[b].usedAt).localeCompare(String(authorLists[a].usedAt)));
+  for (const k of keys.slice(AUTHOR_LIST_LIMIT)) delete authorLists[k];
+  return atomic('author-lists.json', authorLists);
+}
+function cachedList(uid, scope) {
+  const exact = authorLists[uid + '|' + scope]; if (exact) return { entry: exact, works: exact.works };
+  const all = authorLists[uid + '|all']; if (!all || scope === 'all') return null;
+  const type = scope === 'model' ? 1 : 2; return { entry: all, works: all.works.filter(w => w.type === type) };
+}
+const stamp = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+async function persist() { rememberList(); const saved = snapshot();bookmarks=bookmarks.map(b=>state.works.find(w=>w.id===b.id)||b);await atomic('bookmarks.json',saved.bookmarks);delete saved.bookmarks; delete saved.settings; delete saved.account; delete saved.dataDir; return atomic('queue.json', saved); }
 function log(message, work) { const line = { time: new Date().toISOString(), work: work?.id || null, message: cleanError(message) }; state.message = line.message; emit(); saving = saving.catch(() => {}).then(() => fs.appendFile(path.join(dataDir, 'events.jsonl'), JSON.stringify(line) + '\n')); }
 async function account() { const a = await site.identity(); if (activeUid !== a.uid) { activeUid = a.uid; emit(); } return a; }
 async function saveSession() {
@@ -42,6 +58,12 @@ async function run(task, kind = 'task') { if (busy) throw new Error('작업 중�
 function mergeDetail(w, d) { w.author = d.nick_name || w.author; w.authorId = d.user_uid; w.title = d.work_name || w.title; w.cover = d.cover || w.cover; w.date = d.audited_at || w.date; w.rules = C.requirements(d); w.permission = Number(d.download_permission) === 1; w.reason = w.permission ? '' : Number(d.download_type) === 2 ? '작가에게 문의 필요' : Number(d.download_type) === 3 ? '다운로드 미제공' : '배포 기간 또는 접근 제한'; w.detailLoaded = true; }
 async function load(url, scope, signal, refresh=false) {
   const uid = C.authorId(url);
+  rememberList();
+  const cached = refresh ? null : cachedList(uid, scope);
+  if (cached) {
+    site.closePending(); state = { works: cached.works.map(w => ({ ...w })), author: uid, sourceUrl: url, scope, fetchedAt: cached.entry.fetchedAt, message: '', complete: true };
+    log(`저장된 목록 ${state.works.length}개 표시 · ${stamp(cached.entry.fetchedAt)} 조회 · 최신 목록은 새로고침`); await persist(); return;
+  }
   const previous=new Map(refresh&&state.author===uid?state.works.map(w=>[w.id,w]):[]);
   site.closePending(); state = { works: [], author: uid, sourceUrl:url, scope, message: refresh?'목록 새로고침 중':'목록 조회 중', complete: false }; emit();
   const types = scope === 'model' ? [1] : scope === 'motion' ? [2] : [1,2];
@@ -52,7 +74,7 @@ async function load(url, scope, signal, refresh=false) {
     }
     log(`${type === 1 ? '모델' : '모션'} ${pg.page}/${pg.last}페이지 · ${pg.found}/${pg.total}개 조회`);
   }, signal);
-  state.complete = true; log(`목록 ${state.works.length}개 조회 완료 · 조건은 다운로드 시작 시 확인합니다.`); await persist();
+  state.complete = true; state.fetchedAt = new Date().toISOString(); log(`목록 ${state.works.length}개 조회 완료 · 조건은 다운로드 시작 시 확인합니다.`); await persist();
 
 }
 async function resolveWork(w, uid, options, signal) {
@@ -137,7 +159,7 @@ async function start(mode, signal, ids=null, exclusions={}) {
 function handle(name, fn) { ipcMain.handle(name, async (event, ...args) => { if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return {ok:false,error:'허용되지 않은 요청'}; try { return {ok:true,value:await fn(...args)}; } catch(e) { return {ok:false,error:cleanError(e)}; } }); }
 async function bootstrap() {
   await fs.mkdir(dataDir,{recursive:true});
-  config = {...config,...await jsonRead('settings.json',{})};translator.setEnabled(config.autoTranslate===true); history = await jsonRead('history.json',{});
+  config = {...config,...await jsonRead('settings.json',{})};if(!config.autoTranslateChosen)config.autoTranslate=true;translator.setEnabled(config.autoTranslate===true); history = await jsonRead('history.json',{}); authorLists = await jsonRead('author-lists.json',{});
   if(!Number.isSafeInteger(config.concurrency)||config.concurrency<1)config.concurrency=2;
   state = {...state,...await jsonRead('queue.json',{})}; state.works ||= [];
   authorBookmarks=await jsonRead('authors.json',[]);if(!Array.isArray(authorBookmarks))authorBookmarks=[];
@@ -184,7 +206,7 @@ async function bootstrap() {
   });
   handle('autoTranslate',async enabled=>{
     if(typeof enabled!=='boolean')throw new Error('번역 설정 값이 올바르지 않습니다.');
-    config.autoTranslate=enabled;translator.setEnabled(enabled);await embeddedBrowser?.setTranslation(enabled);await atomic('settings.json',config);emit();return enabled;
+    config.autoTranslate=enabled;config.autoTranslateChosen=true;translator.setEnabled(enabled);await embeddedBrowser?.setTranslation(enabled);await atomic('settings.json',config);emit();return enabled;
   });
   handle('translateTexts',async texts=>{
     if(!Array.isArray(texts)||texts.length>24||texts.some(t=>typeof t!=='string'||t.length>1800))throw new Error('번역 요청이 너무 큽니다.');
@@ -268,7 +290,7 @@ async function bootstrap() {
   handle('cancel',()=>{controller?.abort();site.closePending();emit();});
   handle('openPost',id=>{const w=allWorks().find(w=>w.id===id);if(w)return site.open(w);});
   await win.loadFile(path.join(__dirname,'ui/index.html'));
-  setTimeout(()=>require('./updater').checkOnStartup({app,dialog,win,repo:require('../package.json').updateRepo,dataDir,onLog:m=>log(m)}),3000);
+  setTimeout(()=>require('./updater').checkOnStartup({app,dialog,shell,win,repo:require('../package.json').updateRepo,dataDir,onLog:m=>log(m)}),3000);
   win.on('closed',()=>{controller?.abort();site.closePending();app.quit();});
 }
 app.whenReady().then(bootstrap).catch(async e=>{await fs.mkdir(dataDir,{recursive:true});await fs.writeFile(path.join(dataDir,'startup-error.txt'),cleanError(e));app.quit();});

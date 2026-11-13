@@ -176,3 +176,6 @@ footer{margin:16px 22px 14px;padding:14px 16px;gap:10px 14px}
 ::-webkit-scrollbar-thumb{background:#c6c6cc;border:3px solid var(--canvas);border-radius:999px}
 ::-webkit-scrollbar-thumb:hover{background:#a9a9b0}
 @media (prefers-reduced-motion:reduce){progress:indeterminate{animation:none}button,.work{transition:none}}
+.floating-clear,.floating-clear:hover{background:#111114;border-color:#111114;color:#fff;box-shadow:0 10px 26px rgba(17,17,20,.25)}
+.floating-clear:hover{background:#2a2a30}
+.floating-clear b{background:var(--blue);color:#fff}
