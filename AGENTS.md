@@ -74,7 +74,7 @@ ELECTRON_RUN_AS_NODE=1 ./vendor/electron/electron.exe --check src/main.js
 - 모델 디스플레이 뷰어: `src/viewer.js`(WebContentsView, details.aplaybox.com만 허용). 렌더러는 `#viewerStage` 좌표를 `viewerOpen`/`viewerBounds`로 보냄. 내장 탐색기에서 모델 링크를 누르면 `browser.js`의 `onModel`→`main.js` `previewFromBrowser`가 같은 뷰어를 탐색기 위에 띄운다(`viewerOver==='browser'`이면 버튼 동작을 main이 처리, 설정 `browserPreview`). 뷰어 화면 위 버튼(업로더 페이지·게시물 열기·다운로드·닫기)은 `src/viewer-preload.js`가 페이지 안에 그리고 `viewer-action`으로 알린다(네이티브 뷰가 앱 화면을 덮으므로). 확인창은 `confirm()` 대신 `appConfirm()`(`src/ui/popups.js`), 툴팁은 `title` 속성을 그대로 쓰면 자동 변환.
 
 ## 다운로드 진행 구조
-- `main.js`의 `start()`는 `core.pipeline`으로 게시물 확인(`prepare`, 동시 수 `settings.json`의 `checkConcurrency` 1~10, 기본 3)과 파일 전송(`process`, `concurrency` 또는 `concurrencyUnlimited`)을 함께 돌린다. 게시물 하나의 확인이 끝나면 그 파일은 바로 전송 대기열에 들어간다.
+- `main.js`의 `start()`는 게시물 하나를 한 절차로 처리한다: 조건·첨부 확인(`resolveWork`) 직후 같은 자리에서 그 게시물의 파일을 내려받는다. 동시에 처리하는 게시물 수는 `concurrency`(또는 `concurrencyUnlimited`) 하나뿐이고 별도의 확인 단계·설정(`checkConcurrency`)은 없다. 사이트 확인 요청만 내부적으로 동시에 10개까지로 묶는다(`checkSlot`).
 - 계정 조건 처리(`C.fulfill`)는 `serialCondition`으로 한 번에 한 게시물만 실행한다(같은 업로더 팔로우 중복 토글 방지). 사이트 창(`site.resolve`)은 게시물마다 따로 열려 동시에 진행된다.
 - 동시 다운로드·무제한·동시 확인은 IPC `downloadOptions`로 즉시 저장한다(로그인 불필요). 계정별 자동 처리 범위는 기존 `settings`.
 - 작업 중 `selection`은 상태가 '완료'인 게시물 전체 선택만 허용하고 `picked`로 표시한다. 독의 3ds Max 버튼은 작업 중에 `picked` 자료만 보낸다(`activity.js` `maxImportTargets`).

@@ -18,7 +18,7 @@ let win, site, ses, controller, busy = false, job = null, saving = Promise.resol
 let state = { works: [], author: '', message: '업로더 주소를 입력해 목록을 불러오세요.', complete: false };
 let authorLists = {}; // `${uid}|${scope}` -> { uid, scope, sourceUrl, fetchedAt, works } — lists already loaded once
 const AUTHOR_LIST_LIMIT = 30;
-let config = { folder: '', concurrency: 6, concurrencyUnlimited: false, checkConcurrency: 3, notifyOnComplete: true, autoTranslate:true, accounts: {} }, history = {};
+let config = { folder: '', concurrency: 6, concurrencyUnlimited: false, notifyOnComplete: true, autoTranslate:true, accounts: {} }, history = {};
 let activeUid = '', refreshTail = Promise.resolve();
 let bookmarks=[],authorBookmarks=[],embeddedBrowser;
 // 3ds Max import state per post id: {state:'sent'|'done'|'failed', time, message} (data/max-imports.json)
@@ -31,9 +31,8 @@ async function scanPresence(){if(!config.folder)throw new Error('저장 폴더�
 // An account without saved settings starts with all three conditions ticked; nothing is acted on until the user saves them (confirmed).
 const settingsFor = uid => config.accounts[uid] || { follow: true, like: true, collect: true, confirmed: false };
 function cleanError(e) { return String(e?.message || e).replace(/https?:\/\/\S+/g, '[주소 생략]').replace(/Bearer\s+\S+/gi, '[인증 정보 생략]').slice(0, 400); }
-function checkLimit() { const n = Number(config.checkConcurrency); return Number.isSafeInteger(n) && n >= 1 ? Math.min(n, 10) : 3; }
 function hiddenAuthors() { return Array.isArray(config.hiddenAuthors) ? config.hiddenAuthors.map(String) : []; }
-function snapshot() { const hidden = hiddenAuthors(); return { ...state, version: app.getVersion(), authorShortcuts: shortcutAuthors(), defaultAuthors: defaultAuthors.filter(a => !hidden.includes(a.id)), hiddenDefaultAuthors: defaultAuthors.filter(a => hidden.includes(a.id)).length, autoTranslate:config.autoTranslate===true, authorBookmarks, authorNew: newCounts(), busy, job, account: activeUid, settings: settingsFor(activeUid), folder: config.folder, concurrency: config.concurrency, concurrencyUnlimited: config.concurrencyUnlimited === true, checkConcurrency: checkLimit(), notifyOnComplete: config.notifyOnComplete !== false, browserPreview: config.browserPreview !== false, translateFileNames: config.translateFileNames === true, maxExe: config.maxExe || '', dataDir, works:state.works.map(publicWork),bookmarks:bookmarks.map(b=>publicWork(state.works.find(w=>w.id===b.id)||b)) }; }
+function snapshot() { const hidden = hiddenAuthors(); return { ...state, version: app.getVersion(), authorShortcuts: shortcutAuthors(), defaultAuthors: defaultAuthors.filter(a => !hidden.includes(a.id)), hiddenDefaultAuthors: defaultAuthors.filter(a => hidden.includes(a.id)).length, autoTranslate:config.autoTranslate===true, authorBookmarks, authorNew: newCounts(), busy, job, account: activeUid, settings: settingsFor(activeUid), folder: config.folder, concurrency: config.concurrency, concurrencyUnlimited: config.concurrencyUnlimited === true, notifyOnComplete: config.notifyOnComplete !== false, browserPreview: config.browserPreview !== false, translateFileNames: config.translateFileNames === true, maxExe: config.maxExe || '', dataDir, works:state.works.map(publicWork),bookmarks:bookmarks.map(b=>publicWork(state.works.find(w=>w.id===b.id)||b)) }; }
 // The author buttons: built-in authors (unless removed) and the user's own, as one list. A user entry with a built-in
 // author's id replaces it (renamed). Order follows settings.json authorOrder; authors not in it keep their natural place at the end.
 function shortcutAuthors(){
@@ -144,18 +143,23 @@ async function start(mode, signal, ids=null, exclusions={}) {
   if (!config.folder) throw new Error('저장 폴더를 선택해 주세요.');
   const selected = allWorks().filter(w => w.selected&&(!ids||ids.includes(w.id))); if (!selected.length) throw new Error('다운로드할 게시물을 선택해 주세요.');
   for(const w of selected){w.attempted=true;w.picked=false;if(w.status!=='완료')w.status='다운로드 대기';}emit();
-  // Posts are resolved several at a time (config.checkConcurrency) and each post's files start downloading as soon as
-  // that post is resolved, instead of after every post has been checked.
+  // One procedure per post: its conditions and attachments are checked and its files are downloaded right away, in the
+  // same slot. config.concurrency is the number of posts handled at once (there is no separate checking stage or setting).
+  // Site checks are still held to CHECK_MAX at a time so that "unlimited" does not flood the site with requests.
+  const CHECK_MAX = 10; let checking = 0; const checkQueue = [];
+  const checkSlot = async fn => { if (checking >= CHECK_MAX) await new Promise(r => checkQueue.push(r)); else checking++; try { return await fn(); } finally { const n = checkQueue.shift(); if (n) n(); else checking--; } };
   const jobs = [];
   let completed = 0;
   const prepare = async w => {
     try {
       // Re-resolve even known files: signed URLs and account conditions can expire.
-      await resolveWork(w,a.uid,options,signal);
+      await checkSlot(()=>{C.check(signal);return resolveWork(w,a.uid,options,signal);});
       let present;if(exclusions.folder)present=(await require('./existing').selectMissing(config.folder,[w],history,signal)).works[0];
       const mine = [];
       for (const file of w.files.filter(f => f.selected)){if(exclusions.history&&history[w.type+':'+w.id+':'+file.id]||exclusions.folder&&present?.files.find(f=>f.id===file.id)?.existing)continue;mine.push({w,file});}
-      jobs.push(...mine); await persist(); emit(); return mine;
+      jobs.push(...mine); await persist(); emit();
+      for (const job of mine) { C.check(signal); await transfer(job); }
+      return [];
     } catch(e) { if (signal.aborted) throw e; w.status = e instanceof C.Waiting ? '사용자 조작 필요' : '실패'; w.message = cleanError(e); log(w.message,w); await persist(); emit(); return []; }
   };
   const transfer = async ({w,file}) => {
@@ -189,7 +193,7 @@ async function start(mode, signal, ids=null, exclusions={}) {
     completed++; w.status = w.files.filter(f=>f.selected).every(f=>f.status==='완료') ? '완료' : w.files.some(f=>f.status==='실패') ? '실패' : w.files.some(f=>f.status==='사용자 조작 필요') ? '사용자 조작 필요' : '대기';
     state.message = `다운로드 처리 ${completed}/${jobs.length}개`; await persist(); emit();
   };
-  await C.pipeline({ items: selected, prepare, process: transfer, prepareLimit: checkLimit(), processLimit: config.concurrencyUnlimited === true ? Infinity : config.concurrency, signal });
+  await C.pipeline({ items: selected, prepare, process: async () => {}, prepareLimit: config.concurrencyUnlimited === true ? Infinity : config.concurrency, signal });
   C.check(signal);
   const waiting=selected.filter(w=>w.status==='사용자 조작 필요').length;
   if(config.notifyOnComplete !== false){
@@ -212,7 +216,7 @@ async function loadGlossary(){translator.glossary.set(require('./glossary').pars
 async function bootstrap() {
   await fs.mkdir(dataDir,{recursive:true});
   config = {...config,...await jsonRead('settings.json',{})};if(!config.autoTranslateChosen)config.autoTranslate=true;translator.setEnabled(config.autoTranslate===true); history = await jsonRead('history.json',{}); authorLists = await jsonRead('author-lists.json',{}); translator.load(await jsonRead('translations.json',{}));try{translator.loadBuiltin(require('./builtin/translations.json').entries);}catch{/* optional */}try{translator.configure({engine:config.translateEngine||'google',model:config.translateModel||'haiku',claudePath:config.claudePath||'',fresh:config.translateFresh===true,codexPath:config.codexPath||''});try{if(config.translateParallel!==undefined)translator.configure({parallel:config.translateParallel});}catch{}try{translator.configure({codexModel:config.codexModel||''});}catch{/* a model Codex no longer lists: fall back to the default */};}catch{} await loadGlossary(); let translationSaveTimer=null; translator.onChange=()=>{if(translationSaveTimer)return;translationSaveTimer=setTimeout(()=>{translationSaveTimer=null;void atomic('translations.json',translator.entries()).catch(()=>{});},2000);};
-  if(!Number.isSafeInteger(config.concurrency)||config.concurrency<1)config.concurrency=6;config.concurrencyUnlimited=config.concurrencyUnlimited===true;config.checkConcurrency=checkLimit();
+  if(!Number.isSafeInteger(config.concurrency)||config.concurrency<1)config.concurrency=6;config.concurrencyUnlimited=config.concurrencyUnlimited===true;delete config.checkConcurrency;
   state = {...state,...await jsonRead('queue.json',{})}; state.works ||= [];
   authorBookmarks=await jsonRead('authors.json',[]);if(!Array.isArray(authorBookmarks))authorBookmarks=[];maxImports=await jsonRead('max-imports.json',{});if(!maxImports||typeof maxImports!=='object'||Array.isArray(maxImports))maxImports={};
   // A request that was still waiting when the app closed can no longer be matched to its result.
@@ -491,10 +495,9 @@ async function bootstrap() {
   handle('refreshAccount',async()=>{await account(); await saveSession(); emit();});
   handle('logout',async()=>{ if(busy) throw new Error('작업을 취소한 뒤 로그아웃해 주세요.'); site.closePending(); if(site.loginWindow&&!site.loginWindow.isDestroyed()) site.loginWindow.destroy(); for(const w of BrowserWindow.getAllWindows()) if(w!==win) w.destroy(); await ses.clearStorageData(); await sessionSave.catch(()=>{}); await fs.unlink(path.join(dataDir,'session.enc')).catch(()=>{}); activeUid=''; emit(); });
   handle('downloadOptions',async o=>{
-    const n=Number(o?.concurrency),c=Number(o?.checkConcurrency);
+    const n=Number(o?.concurrency);
     if(!Number.isSafeInteger(n)||n<1||n>64)throw new Error('동시 다운로드 수는 1~64 사이의 정수로 입력해 주세요.');
-    if(!Number.isSafeInteger(c)||c<1||c>10)throw new Error('동시 확인 수는 1~10 사이의 정수로 입력해 주세요.');
-    config.concurrency=n;config.checkConcurrency=c;config.concurrencyUnlimited=o.unlimited===true;await atomic('settings.json',config);emit();
+    config.concurrency=n;config.concurrencyUnlimited=o.unlimited===true;await atomic('settings.json',config);emit();
   });
   handle('settings',async options=>{ if(busy) throw new Error('작업 완료 후 설정을 변경해 주세요.'); const concurrency=Number(options.concurrency);if(!Number.isSafeInteger(concurrency)||concurrency<1)throw new Error('동시 다운로드 수는 1 이상의 정수로 입력해 주세요.');const a=await site.assertAccount(); config.accounts[a.uid]={follow:options.follow===true,like:options.like===true,collect:options.collect===true,confirmed:true}; config.concurrency=concurrency; await atomic('settings.json',config); activeUid=a.uid; emit(); });
   handle('folder',async()=>{if(busy) throw new Error('작업 완료 후 폴더를 변경해 주세요.'); const r=await dialog.showOpenDialog(win,{defaultPath:config.folder||undefined,properties:['openDirectory','createDirectory']}); if(!r.canceled){config.folder=r.filePaths[0];await atomic('settings.json',config);emit();}});

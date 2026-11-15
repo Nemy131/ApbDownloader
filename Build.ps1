@@ -21,6 +21,8 @@ $appDir = Join-Path $packageDir 'resources/app'
 New-Item -ItemType Directory -Force $appDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectDir 'package.json') -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $projectDir 'src') -Destination $appDir -Recurse -Force
+# ImportMMD.ini is written next to the script when it is run from the source tree; it holds this PC's settings and is not shipped.
+Remove-Item -LiteralPath (Join-Path $appDir 'src\max\ImportMMD.ini') -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath (Join-Path $projectDir 'README.md') -Destination $packageDir -Force
 Copy-Item -LiteralPath (Join-Path $projectDir 'VERIFICATION.md') -Destination $packageDir -Force
 Write-Output "Built: $packageDir/AplayboxDownloader.exe"
