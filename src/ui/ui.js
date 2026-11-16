@@ -601,3 +601,29 @@ for(const engine of Object.keys(LLM))$(engine+'Logout').onclick=async()=>{
   finally{b.disabled=false;}
 };
 $('translateFileNames').onchange=async()=>{const r=await window.aplay.call('fileNameTranslation',$('translateFileNames').checked);if(!r.ok){toast(r.error);$('translateFileNames').checked=!$('translateFileNames').checked;}};
+$('maxReinstall').onclick=async()=>{
+  const b=$('maxReinstall');b.disabled=true;
+  try{
+    const scan=await window.aplay.call('maxReinstall','scan');if(!scan.ok){toast(scan.error);return;}
+    const files=scan.value.files,shown=files.slice(0,12).map(f=>'• '+f.replace(/^.*?\\Autodesk\\(3dsMax\\)?/i,'')).join('\n')+(files.length>12?'\n• 외 '+(files.length-12)+'개':'');
+    const msg=(files.length?'3ds Max 경로의 ImportMMD 관련 파일 '+files.length+'개를 지우고 앱에 내장된 스크립트로 교체합니다.\n'+shown:'3ds Max 경로에 따로 설치된 ImportMMD 관련 파일이 없습니다. 연동 스크립트만 앱에 내장된 것으로 다시 설치합니다.');
+    if(!await appConfirm(msg,{title:'ImportMMD 재설치',ok:'재설치',danger:files.length>0,note:'실행 중인 3ds Max는 다시 시작해야 적용됩니다. Blender·반디집 경로 설정은 유지됩니다.'}))return;
+    const r=await window.aplay.call('maxReinstall','run');if(!r.ok){toast(r.error);return;}
+    renderMaxConfig(r.value.config);
+    const v=r.value;
+    const done='연동 스크립트 설치 '+v.installed.length+'곳';
+    const perm=v.failed.filter(f=>f.perm);
+    if(perm.length){
+      const list=perm.slice(0,12).map(f=>'• '+f.file.replace(/^.*?\\Autodesk\\(3dsMax\\)?/i,'')).join('\n')+(perm.length>12?'\n• 외 '+(perm.length-12)+'개':'');
+      if(await appConfirm('다음 파일은 관리자 권한이 있어야 지울 수 있습니다.\n'+list,{title:'관리자 권한 필요',ok:'관리자 권한으로 삭제',danger:true,note:'Windows 사용자 계정 컨트롤 창에서 [예]를 누르면 위 파일만 지웁니다.'})){
+        const e=await window.aplay.call('maxReinstall','elevate');if(!e.ok){toast(e.error);return;}
+        renderMaxConfig(e.value.config);
+        const ev=e.value;
+        toast(ev.canceled?'관리자 권한 요청을 취소했습니다. 파일 '+perm.length+'개가 남아 있습니다.':ev.failed.length?'파일 '+ev.failed.length+'개를 지우지 못했습니다: '+ev.failed.map(f=>f.file+' ('+f.error+')').join(', '):'ImportMMD 재설치 완료 · 삭제 '+(v.removed.length+ev.removed.length)+'개 · '+done);
+        return;
+      }
+      toast('파일 '+perm.length+'개를 지우지 못했습니다(관리자 권한 필요) · '+done);return;
+    }
+    toast(v.failed.length?'파일 '+v.failed.length+'개를 지우지 못했습니다: '+v.failed.map(f=>f.file+' ('+f.error+')').join(', '):'ImportMMD 재설치 완료 · 삭제 '+v.removed.length+'개 · '+done);
+  }finally{b.disabled=false;}
+};

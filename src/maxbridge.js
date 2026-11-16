@@ -195,6 +195,77 @@ function uninstall(dirs = startupDirs()) {
   return removed;
 }
 
+// ImportMMD 재설치: 3ds Max 경로에 따로 설치된 ImportMMD 관련 파일(이전에 손으로 복사한 임포터, 매크로, 연동 스크립트)을
+// 모두 지우고 앱에 내장된 연동 스크립트를 다시 설치한다. 임포터 본체는 항상 앱 폴더(src/max)의 것을 쓴다.
+// 대상 폴더: 사용자 폴더 <버전>\<언어>\scripts·usermacros(하위 포함)·temp(바로 아래), 설치 폴더 scripts·MacroScripts·stdplugs\stdscripts.
+// 판정: 파일 이름(ImportMMD*, pmx_to_fbx*.py, ApbMaxBridge.ms) 또는 내용에 "ImportMMD"가 들어 있는 .ms/.mse/.mcr.
+// 사용자 설정(%LOCALAPPDATA%\ApbDownloader\max-bridge의 ImportMMD.ini·로그)은 지우지 않는다.
+const RELATED_NAME = /^(importmmd[^\\/]*\.(ms|mse|mcr|ini|txt|py)|pmx_to_fbx[^\\/]*\.py|apbmaxbridge\.ms)$/i;
+const SCRIPT_EXT = /\.(ms|mse|mcr)$/i;
+function relatedFiles({ userRoot = path.join(localAppData(), 'Autodesk', '3dsMax'), installDirs = [] } = {}) {
+  const roots = [];
+  for (const s of startupDirs(userRoot)) {
+    const lang = path.dirname(path.dirname(s.dir));
+    roots.push([path.join(lang, 'scripts'), 6], [path.join(lang, 'usermacros'), 3], [path.join(lang, 'temp'), 0]);
+  }
+  for (const d of installDirs) roots.push([path.join(d, 'scripts'), 6], [path.join(d, 'MacroScripts'), 3], [path.join(d, 'stdplugs', 'stdscripts'), 3]);
+  const out = new Map();
+  const walk = (dir, depth) => {
+    let items = []; try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const it of items) {
+      const p = path.join(dir, it.name);
+      if (it.isDirectory()) { if (depth > 0) walk(p, depth - 1); continue; }
+      if (!it.isFile()) continue;
+      let hit = RELATED_NAME.test(it.name);
+      if (!hit && SCRIPT_EXT.test(it.name)) { try { const st = fs.statSync(p); if (st.size < 2 * 1024 * 1024) hit = /importmmd/i.test(fs.readFileSync(p, 'latin1')); } catch {} }
+      if (hit) out.set(p.toLowerCase(), p);
+    }
+  };
+  for (const [dir, depth] of roots) walk(dir, depth);
+  return [...out.values()].sort();
+}
+// 지운 파일, 지우지 못한 파일(관리자 권한 필요 등), 새로 설치한 연동 스크립트를 돌려준다.
+function reinstall(files, dirs = startupDirs()) {
+  const removed = [], failed = [];
+  for (const f of files) { try { fs.unlinkSync(f); removed.push(f); } catch (e) { if (e.code === 'ENOENT') removed.push(f); else failed.push({ file: f, perm: e.code === 'EPERM' || e.code === 'EACCES', error: e.code === 'EPERM' || e.code === 'EACCES' ? '권한 없음' : e.message }); } }
+  return { removed, failed, installed: install(dirs) };
+}
+
+// 관리자 권한으로 파일 삭제(UAC 확인 창). 목록·스크립트·결과는 임시 폴더의 파일로 주고받는다(경로 인용 문제 방지).
+// 삭제 대상은 호출하는 쪽이 relatedFiles()로 다시 찾은 목록만 넘긴다(렌더러가 경로를 지정하지 않음).
+const REMOVE_PS1 = [
+  'param([string]$List, [string]$Result)',
+  '$out = foreach ($f in (Get-Content -LiteralPath $List -Encoding UTF8)) {',
+  '  if (-not $f) { continue }',
+  '  try { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction Stop }; "OK`t$f" }',
+  '  catch { "ERR`t$f`t$($_.Exception.Message)" }',
+  '}',
+  '[IO.File]::WriteAllLines($Result, [string[]]$out, (New-Object Text.UTF8Encoding $false))'
+].join('\r\n');
+const psExe = () => path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+// runner(script, list, result) -> Promise<exitCode>. 기본은 Start-Process -Verb RunAs로 UAC를 띄워 관리자 PowerShell에서 실행. 1223 = 사용자가 취소.
+function runElevated(script, list, result) {
+  const q = s => "'" + String(s).replace(/'/g, "''") + "'";
+  const inner = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '"' + script + '"', '-List', '"' + list + '"', '-Result', '"' + result + '"'].map(q).join(',');
+  const cmd = 'try { $p = Start-Process -FilePath ' + q(psExe()) + ' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList ' + inner + '; exit $p.ExitCode } catch { exit 1223 }';
+  return new Promise(resolve => execFile(psExe(), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cmd], { windowsHide: true, timeout: 10 * 60000 }, err => resolve(err ? (typeof err.code === 'number' ? err.code : 1) : 0)));
+}
+async function elevatedRemove(files, { runner = runElevated } = {}) {
+  if (!files.length) return { removed: [], failed: [], canceled: false };
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'apb-elevate-'));
+  const script = path.join(dir, 'remove.ps1'), list = path.join(dir, 'list.txt'), result = path.join(dir, 'result.txt');
+  try {
+    fs.writeFileSync(script, '\ufeff' + REMOVE_PS1, 'utf8');
+    fs.writeFileSync(list, '\ufeff' + files.join('\r\n'), 'utf8');
+    const code = await runner(script, list, result);
+    let lines = []; try { lines = fs.readFileSync(result, 'utf8').replace(/^\ufeff/, '').split(/\r?\n/).filter(Boolean); } catch {}
+    if (!lines.length) return { removed: [], failed: files.map(file => ({ file, error: code === 1223 ? '취소됨' : '실행 실패' })), canceled: code === 1223 };
+    const removed = [], failed = [];
+    for (const l of lines) { const [st, file, msg] = l.split('\t'); if (st === 'OK') removed.push(file); else failed.push({ file, error: msg || '삭제 실패' }); }
+    return { removed, failed, canceled: false };
+  } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} }
+}
+
 // ImportMMD.ini (in the bridge folder; ImportMMD.ms reads it through GetPrivateProfileString).
 // Rewritten as UTF-16LE with BOM so non-ASCII paths survive regardless of the system code page.
 const iniFile = () => path.join(bridgeDir(), 'ImportMMD.ini');
@@ -288,4 +359,4 @@ async function configView(maxExe) {
   };
 }
 
-module.exports = { OPTION_DEFS, importOptions, optionsToIni, parseResult, takeResults, applyResults, IMPORTER, BRIDGE_SCRIPT, bridgeDir, startupDirs, installState, install, uninstall, maxProcesses, parseInstances, instances, label, findMaxExes, writeRequest, waitTaken, launch, importableFiles, parseIni, updateIni, readIni, writeIni, configView };
+module.exports = { OPTION_DEFS, importOptions, optionsToIni, parseResult, takeResults, applyResults, IMPORTER, BRIDGE_SCRIPT, bridgeDir, startupDirs, installState, install, uninstall, maxProcesses, parseInstances, instances, label, findMaxExes, writeRequest, waitTaken, launch, importableFiles, relatedFiles, reinstall, elevatedRemove, REMOVE_PS1, parseIni, updateIni, readIni, writeIni, configView };

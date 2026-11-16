@@ -2,6 +2,7 @@
 const TITLE_BAR=34; // 테마 색 타이틀 바 높이(px). ui/readability.css의 --titlebar-h, browser.js와 같은 값
 const { app, BrowserWindow, ipcMain, dialog, shell, session, safeStorage, Notification } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 const { Site } = require('./site');
 const C = require('./core');
@@ -338,6 +339,18 @@ async function bootstrap() {
     MB.install();return true;
   }
   // 3ds Max import settings dialog: Max exe (app setting), Blender / Bandizip (ImportMMD.ini), startup script.
+  // ImportMMD 재설치: 'scan' = 지울 파일 목록, 'run' = 지우고 연동 스크립트 다시 설치
+  handle('maxReinstall',async op=>{
+    const installDirs=(await MB.findMaxExes()).map(m=>path.dirname(m.exe));
+    if(config.maxExe&&!installDirs.some(d=>d.toLowerCase()===path.dirname(config.maxExe).toLowerCase()))installDirs.push(path.dirname(config.maxExe));
+    const files=MB.relatedFiles({installDirs});
+    if(op==='scan')return {files,startup:MB.startupDirs().length};
+    // 'elevate': run 뒤에도 남은 관련 파일(권한 부족)을 관리자 권한으로 삭제. 목록은 여기서 다시 찾은 것만 사용.
+    if(op==='elevate'){const left=files.filter(f=>fsSync.existsSync(f));const r=await MB.elevatedRemove(left);return {...r,config:await MB.configView(config.maxExe)};}
+    if(op!=='run')throw new Error('알 수 없는 요청입니다.');
+    if(!MB.startupDirs().length)throw new Error('3ds Max 사용자 폴더가 없습니다. Max를 한 번 실행한 뒤 다시 시도해 주세요.');
+    return {...MB.reinstall(files),config:await MB.configView(config.maxExe)};
+  });
   handle('maxConfig',async(op,key)=>{
     if(op==='browse'||op==='auto'){
       if(key==='max'){if(op==='auto'){delete config.maxExe;await atomic('settings.json',config);emit();}else await chooseMaxExe();}
