@@ -68,14 +68,14 @@ function render(){
     const img=document.createElement('img');img.className='cover';img.alt='';img.loading='lazy';try{const u=new URL(w.cover);if(u.protocol==='https:'&&u.hostname.endsWith('.aplaybox.com'))img.src=u.href;}catch{}const coverBox=text('div','','cover-box');coverBox.append(img);const play=text('button','','cover-play');play.type='button';play.title='3D로 미리 보기';play.setAttribute('aria-label',translated(w.title)+' 모델 디스플레이 보기');play.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5v11l9-5.5z"/></svg>';play.onclick=()=>openViewer(w);coverBox.append(play);if(w.isNew){const nb=text('span','NEW','new-badge card-new');coverBox.append(nb);}row.append(coverBox);
     const info=text('div','','info');info.append(Object.assign(text('div',translated(w.title),'title'),{title:w.title}));if(w.date)info.append(text('div',w.date,'meta'));
     if(w.message&&w.message!=='다운로드 시작 시 조건·첨부 파일 확인')info.append(text('div',w.message,'message'));row.append(info);
-    const status=text('div','','card-status'),actions=text('div','','actions');const stateEl=text('span',w.status,'state');stateEl.dataset.status=w.status||'';status.append(stateEl);const bookmark=iconButton(w.bookmarked?'star-fill':'star',w.bookmarked?'북마크에서 빼기':'북마크에 담기',w.title,'bookmark-btn'+(w.bookmarked?' on':''));bookmark.setAttribute('aria-pressed',String(!!w.bookmarked));bookmark.onclick=()=>call('bookmark',w.id);actions.append(bookmark);const open=iconButton('open','게시물 페이지 열기',w.title);open.onclick=()=>call('openPost',w.id);actions.append(open);if(w.hasHistory||w.inFolder||w.existingPath){const mx=iconButton('max','3ds Max로 임포트',w.title,'max-import');mx.onclick=()=>maxImport([w.id]);actions.append(mx);}if(w.existingPath){const present=text('span','폴더에 있음','badge met');present.title=w.existingPath;status.append(present);}if(w.maxImport){const m=w.maxImport,label=m.state==='done'?'임포트 완료':m.state==='failed'?'임포트 실패':'임포트 요청됨';const badge=text('span',label,'badge max-state '+m.state);badge.title=m.state==='failed'?(m.message||'3ds Max 임포트 창의 로그를 확인해 주세요.'):m.state==='sent'?'3ds Max가 임포트를 마치면 결과가 표시됩니다.':'3ds Max로 임포트를 마쳤습니다.';status.append(badge);}const again=!!(w.hasHistory||w.existingPath);const dl=iconButton('download',again?'다시 다운로드':'이 자료만 다운로드',w.title,'card-download');dl.disabled=!!state.busy;dl.onclick=()=>downloadOne(w);actions.append(dl);row.append(status,actions);
+    const status=text('div','','card-status'),actions=text('div','','actions');const stateEl=text('span',w.status,'state');stateEl.dataset.status=w.status||'';status.append(stateEl);const bookmark=iconButton(w.bookmarked?'star-fill':'star',w.bookmarked?'북마크에서 빼기':'북마크에 담기',w.title,'bookmark-btn'+(w.bookmarked?' on':''));bookmark.setAttribute('aria-pressed',String(!!w.bookmarked));bookmark.onclick=()=>call('bookmark',w.id);actions.append(bookmark);if(w.hasHistory||w.inFolder||w.existingPath){const mx=iconButton('max','3ds Max로 임포트',w.title,'max-import');mx.onclick=()=>maxImport([w.id]);actions.append(mx);}if(w.existingPath){const present=text('span','폴더에 있음','badge met');present.title=w.existingPath;status.append(present);}if(w.maxImport){const m=w.maxImport,label=m.state==='done'?'임포트 완료':m.state==='failed'?'임포트 실패':'임포트 요청됨';const badge=text('span',label,'badge max-state '+m.state);badge.title=m.state==='failed'?(m.message||'3ds Max 임포트 창의 로그를 확인해 주세요.'):m.state==='sent'?'3ds Max가 임포트를 마치면 결과가 표시됩니다.':'3ds Max로 임포트를 마쳤습니다.';status.append(badge);}const again=!!(w.hasHistory||w.existingPath);if(!(w.hasHistory||w.inFolder||w.existingPath)){const di=iconButton('download-max','다운로드 후 3ds Max로 임포트',w.title,'card-download-import');di.disabled=!!state.busy;di.onclick=()=>downloadAndImport(w);actions.append(di);}const dl=iconButton('download',again?'다시 다운로드':'이 자료만 다운로드',w.title,'card-download');dl.disabled=!!state.busy;dl.onclick=()=>downloadOne(w);actions.append(dl);row.append(status,actions);
     if(w.files.length){const container=text('div','','files');const box=document.createElement('details');box.className='files-box';box.open=openFileLists.has(w.id);box.addEventListener('toggle',()=>{if(box.open)openFileLists.add(w.id);else openFileLists.delete(w.id);});box.append(text('summary',fileSummary(w)),container);for(const f of w.files){const item=text('div','','file'+(f.selected?'':' off')),fc=document.createElement('input');fc.type='checkbox';fc.className='file-toggle';fc.checked=!!f.selected;fc.disabled=false;fc.setAttribute('aria-label',f.name+' 받기');item.title=f.selected?'누르면 이 파일을 다운로드에서 뺍니다':'받지 않는 파일 · 누르면 다시 포함합니다';fc.onchange=()=>call('selection',[{id:w.id,fileId:f.id,selected:fc.checked}]);item.append(fc,text('span',f.name),text('small',`${bytes(f.size||f.total)} · ${f.status}`));if(f.status==='다운로드 중'){const p=document.createElement('progress');if(f.total){p.max=f.total;p.value=f.loaded||0;}item.append(p);item.append(text('small',`${bytes(f.loaded||0)} · ${bytes(f.speed||0)}/s`,'error'));}if(f.message)item.append(text('small',f.message,'error'));container.append(item);}status.append(box);}frag.append(row);
   }
   if(!frag.children.length)frag.append(text('div',state.works.length?'검색 조건에 맞는 자료가 없습니다.':'업로더 링크를 넣고 목록을 불러오세요. 목록 조회는 계정 행동을 실행하지 않습니다.','empty'));
   list.replaceChildren(frag);list.scrollTop=scroll;
   if(typeof renderActivity==='function')renderActivity();
 }
-function update(s){if(!s)return;state=s;const key=JSON.stringify([s.folder,s.busy,catalog().map(w=>[w.id,w.files.length,w.status])]);if($('excludeFolder').checked&&key!==scanKey&&!scanPending){scanKey=key;void refreshPresence();}if(!renderTimer)renderTimer=setTimeout(()=>{renderTimer=null;render();},100);}
+function update(s){if(!s)return;state=s;importAfterDownload();const key=JSON.stringify([s.folder,s.busy,catalog().map(w=>[w.id,w.files.length,w.status])]);if($('excludeFolder').checked&&key!==scanKey&&!scanPending){scanKey=key;void refreshPresence();}if(!renderTimer)renderTimer=setTimeout(()=>{renderTimer=null;render();},100);}
 window.aplay.onState(update);
 window.aplay.onAuthor(url=>{$('embeddedPanel').hidden=true;$('url').value=url;activeTab='all';$('search').value='';render();});
 for(const id of ['search','filter','sort'])$(id).addEventListener('input',render);
@@ -96,7 +96,18 @@ $('concurrencyUnlimited').addEventListener('change',async()=>{
 $('refresh').onclick=()=>{if(!$('url').value){toast('업로더를 먼저 선택해 주세요.');return;}call('refresh',$('url').value,$('scope').value);};
 
 $('login').onclick=()=>call('login');$('logout').onclick=()=>call('logout');$('folderBtn').onclick=()=>call('folder');$('openFolder').onclick=()=>call('openFolder');
-$('save').onclick=async()=>{await call('settings',{follow:$('follow').checked,like:$('like').checked,collect:$('collect').checked,concurrency:state.concurrency||6});settingsDirty=false;update(await call('snapshot'));};
+async function saveConsent(){const r=await window.aplay.call('settings',{follow:$('follow').checked,like:$('like').checked,collect:$('collect').checked,concurrency:state.concurrency||6});if(!r.ok){toast(r.error);return false;}settingsDirty=false;update(await call('snapshot'));return true;}
+$('save').onclick=()=>saveConsent();
+// 다운로드 전 확인: 로그인이나 자동 처리 설정 저장이 안 돼 있으면 팝업에서 바로 처리하게 한다.
+async function downloadReady(){
+ if(!state.account){if(await appConfirm('로그인이 필요합니다.',{title:'로그인',ok:'로그인',note:'로그인 창에서 직접 로그인하면 창이 자동으로 닫힙니다. 그다음 다시 다운로드해 주세요.'}))void call('login');return false;}
+ if(settingsDirty||!state.settings?.confirmed){
+  const on=[['follow','팔로우'],['like','좋아요'],['collect','즐겨찾기']].filter(([k])=>$(k).checked).map(([,n])=>n);
+  if(!await appConfirm('다운로드 조건 자동 처리 설정을 저장해야 다운로드할 수 있습니다.',{title:'다운로드 조건 자동 처리',ok:'설정 저장',note:'자동 처리: '+(on.length?on.join(' · '):'사용 안 함')+'\n다운로드에 필요한 행동만 실행하며, 범위는 설정 창에서 바꿀 수 있습니다.'}))return false;
+  if(!await saveConsent())return false;
+ }
+ return true;
+}
 $('all').onclick=()=>call('selection',tabWorks().map(w=>({id:w.id,selected:true})));$('none').onclick=()=>call('selection',tabWorks().map(w=>({id:w.id,selected:false})));
 // 전체 기록 삭제 (다운로드 진행 · 다운로드 완료 · 임포트 완료 탭). 기록만 지우며 내려받은 파일과 3ds Max 씬은 그대로 둔다.
 const CLEAR_RECORDS={
@@ -113,9 +124,18 @@ $('selectNotImported').onclick=async()=>{const list=tabWorks();const n=list.filt
 $('missing').onclick=()=>call('selectMissing',tabWorks().filter(w=>w.selected).map(w=>w.id),'exclude');
 $('selectAbsent').onclick=()=>call('selectMissing',filtered().map(w=>w.id),'replace');
 // Downloads every selected post, including ones hidden by the current tab, search or filter (the dock counts those too).
-function start(mode){if(state.busy){toast('진행 중인 작업이 끝난 뒤 다운로드해 주세요.');return;}if(settingsDirty){toast('변경한 자동 처리 설정을 먼저 저장해 주세요.');return;}if(scanPending){toast('폴더 검사 완료 후 다운로드해 주세요.');return;}const ids=catalog().filter(w=>w.selected).map(w=>w.id);if(!ids.length){toast('다운로드할 게시물을 선택해 주세요.');return;}void call('start',mode,ids,exclusions());}
-async function downloadOne(w){if(state.busy){toast('진행 중인 작업이 끝난 뒤 다운로드해 주세요.');return;}if(settingsDirty){toast('변경한 자동 처리 설정을 먼저 저장해 주세요.');return;}if((w.hasHistory||w.existingPath)&&!await appConfirm('이미 받은 자료입니다. 다시 다운로드할까요?',{title:'다시 다운로드',ok:'다시 받기'}))return;if(!w.selected){const r=await window.aplay.call('selection',[{id:w.id,selected:true}]);if(!r.ok){toast(r.error);return;}}call('start','download',[w.id],{history:false,folder:false});}
-call('snapshot').then(s=>{if(s?.sourceUrl)$('url').value=s.sourceUrl;else if(s?.author)$('url').value=`https://www.aplaybox.com/u/${s.author}/model`;update(s);});window.addEventListener('focus',()=>call('refreshAccount'));
+async function start(mode){if(state.busy){toast('진행 중인 작업이 끝난 뒤 다운로드해 주세요.');return;}if(scanPending){toast('폴더 검사 완료 후 다운로드해 주세요.');return;}if(!catalog().some(w=>w.selected)){toast('다운로드할 게시물을 선택해 주세요.');return;}if(!await downloadReady())return;if(state.busy)return;const ids=catalog().filter(w=>w.selected).map(w=>w.id);void call('start',mode,ids,exclusions());}
+// Returns true once the download has started.
+async function downloadOne(w){if(state.busy){toast('진행 중인 작업이 끝난 뒤 다운로드해 주세요.');return false;}if(!await downloadReady())return false;if((w.hasHistory||w.existingPath)&&!await appConfirm('이미 받은 자료입니다. 다시 다운로드할까요?',{title:'다시 다운로드',ok:'다시 받기'}))return false;if(state.busy)return false;if(!w.selected){const r=await window.aplay.call('selection',[{id:w.id,selected:true}]);if(!r.ok){toast(r.error);return false;}}const r=await window.aplay.call('start','download',[w.id],{history:false,folder:false});if(!r.ok){toast(r.error);return false;}return true;}
+// 카드의 '다운로드 후 임포트': 다운로드가 끝나고 자료가 받아졌으면 3ds Max 임포트 창을 연다.
+let importAfter='';
+async function downloadAndImport(w){if(await downloadOne(w))importAfter=w.id;}
+function importAfterDownload(){if(!importAfter||state.busy)return;const id=importAfter;importAfter='';const w=catalog().find(x=>x.id===id);if(w&&(w.hasHistory||w.inFolder||w.existingPath))void maxImport([id]);}
+// 첫 실행: 사용 방법을 한 번 띄우고, 불러온 업로더가 없으면 엔드필드 북마크를 기본으로 연다.
+const FIRST_AUTHOR='760844862';
+function firstRun(s){let seen=true;try{seen=localStorage.getItem('helpSeen')==='1';}catch{}if(!seen){try{localStorage.setItem('helpSeen','1');}catch{}$('helpDialog').showModal();}
+ if(s&&!s.busy&&!s.author&&!s.sourceUrl&&!(s.works||[]).length){const a=authorList().find(a=>a.id===FIRST_AUTHOR);if(a)void loadAuthorShortcut(a);}}
+call('snapshot').then(s=>{if(s?.sourceUrl)$('url').value=s.sourceUrl;else if(s?.author)$('url').value=`https://www.aplaybox.com/u/${s.author}/model`;update(s);firstRun(s);});window.addEventListener('focus',()=>call('refreshAccount'));
 
 // 썸네일 보기: 3단계(열 수 + 높이) 아이콘, … 에서 높이 세부 조절
 let listColumns=Number(localStorage.getItem('listColumns')||4);
@@ -466,7 +486,8 @@ const ICONS={
  'star-fill':'<path class="fill" d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/>',
  open:'<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
  max:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5 M12 12v9 M12 12L4 7.5"/>',
- download:'<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/>'
+ download:'<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/>',
+ 'download-max':'<path d="M12 2v6.5m0 0L9.2 5.7M12 8.5l2.8-2.8M12 11.5l7 3.3v4L12 22l-7-3.2v-4zM12 18l7-3.2M12 18v4M12 18l-7-3.2"/>'
 };
 // label is always the accessible name; the tooltip is left out for icons that explain themselves (star, download arrow)
 const PLAIN_ICONS=new Set(['star','star-fill','download']);

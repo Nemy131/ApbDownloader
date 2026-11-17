@@ -127,7 +127,9 @@ footer{position:static}
 .work>.cover-box{position:relative;display:block;width:100%;align-self:stretch;min-width:0}
 .work>.cover-box>.cover{display:block;width:100%;height:var(--thumbnail-height,var(--thumbnail-size));max-height:none;aspect-ratio:auto;object-fit:cover;border-radius:7px}
 .card-download.card-download{margin-left:auto;border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);font-weight:700}
-.card-download:disabled{opacity:.45}
+.card-download:disabled,.card-download-import:disabled{opacity:.45}
+.card-download-import{margin-left:auto}
+.card-download-import+.card-download.card-download{margin-left:0}
 
 /* 업로더 바로가기: 북마크 칩(★)과 삭제 ✕ */
 .default-author-buttons .author-chip{position:relative;display:inline-flex}

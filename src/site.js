@@ -81,12 +81,14 @@ class Site {
     return win;
   }
   // The window is shown at once and the page loads inside it; waiting for the whole page first made the button look dead for seconds.
-  async login() { const fresh = !this.loginWindow || this.loginWindow.isDestroyed(); if (fresh) this.loginWindow = this.newWindow('Aplaybox · 직접 로그인 (불러오는 중…)'); const w = this.loginWindow; w.show(); w.focus(); if (fresh) w.loadURL('https://www.aplaybox.com/login').catch(e => { if (!w.isDestroyed()) this.log('로그인 페이지를 열지 못했습니다: ' + (e?.message || e)); }); }
+  async login() { const fresh = !this.loginWindow || this.loginWindow.isDestroyed(); if (fresh) this.loginToken = (await this.identity()).token; if (fresh) this.loginWindow = this.newWindow('Aplaybox · 직접 로그인 (불러오는 중…)'); const w = this.loginWindow; w.show(); w.focus(); if (fresh) w.loadURL('https://www.aplaybox.com/login').catch(e => { if (!w.isDestroyed()) this.log('로그인 페이지를 열지 못했습니다: ' + (e?.message || e)); }); }
   async open(w, {play=false}={}) {
     const old = this.pending.get(w.id); if (old && !old.win.isDestroyed()) { old.win.show(); old.win.focus(); if(play) void playModel(old.win); return; }
     const existing=this.previewWindows.get(w.id);if(existing&&!existing.isDestroyed()){existing.show();existing.focus();if(play) void playModel(existing);return;}
     const win = this.newWindow('Aplaybox · 게시물');this.previewWindows.set(w.id,win); await win.loadURL(workUrl(w)); win.show(); if(play) void playModel(win);
   }
+  // Closes the login window once the account cookies show a login made after the window was opened. Returns true when it closed one.
+  closeLoginIfDone(a) { const w = this.loginWindow; if (!w || w.isDestroyed() || !a?.token || !a.uid || a.token === this.loginToken) return false; w.destroy(); this.loginWindow = null; return true; }
   closePending() { for (const p of this.pending.values()) if (!p.win.isDestroyed()) p.win.destroy(); this.pending.clear(); }
   async resolve(w, d, signal, uid) {
     await this.assertAccount(uid); check(signal);

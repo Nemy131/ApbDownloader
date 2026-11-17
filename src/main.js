@@ -231,7 +231,7 @@ async function bootstrap() {
   session.defaultSession.webRequest.onBeforeSendHeaders({urls:['https://*.aplaybox.com/*']},(details,callback)=>{callback({requestHeaders:{...details.requestHeaders,Referer:'https://www.aplaybox.com/'}});});
   ses.on('will-download',(e)=>e.preventDefault()); // Only the validated application download pipeline writes files.
   await restoreSession(); site = new Site(ses,log); await account();
-  let timer; ses.cookies.on('changed',()=>{ clearTimeout(timer); timer=setTimeout(()=>{ account().then(saveSession).catch(()=>{}); },500); });
+  let timer; ses.cookies.on('changed',()=>{ clearTimeout(timer); timer=setTimeout(()=>{ account().then(a=>{ if(site.closeLoginIfDone(a)&&win&&!win.isDestroyed()){ log('로그인했습니다. 로그인 창을 닫았습니다.'); win.show(); win.focus(); } return saveSession(); }).catch(()=>{}); },500); });
   if(process.argv.includes('--verify-download')) {
     if(!verificationTarget)throw new Error('검증할 기존 선택 항목이 없습니다.');
     verificationTarget.selected=true; await run(s=>start('download',s),'download');
