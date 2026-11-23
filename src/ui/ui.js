@@ -57,8 +57,7 @@ function render(){
   for(const id of ['refresh','folderBtn','save','all','none','missing','selectAbsent','logout','follow','like','collect','scope'])$(id).disabled=false;
   if(lastAccount!==state.account){lastAccount=state.account;settingsDirty=false;loginNeeded=false;$('login').hidden=!!state.account;}
   if(!settingsDirty){for(const k of ['follow','like','collect'])$(k).checked=!!state.settings?.[k];}
-  if(!downloadOptionsSaving&&document.activeElement!==$('concurrency')){$('concurrency').value=String(state.concurrency||6);$('concurrencyUnlimited').checked=state.concurrencyUnlimited===true;}
-  $('concurrency').disabled=$('concurrencyUnlimited').checked;
+  if(!downloadOptionsSaving&&document.activeElement!==$('concurrency')){$('concurrency').value=String(state.concurrency||1);}
   $('consent').textContent=state.settings?.confirmed?'현재 계정에 저장된 범위로 자동 처리합니다. 설정 변경 후에는 다시 저장해 주세요.':'로그인 후 자동 처리 범위를 저장해 주세요. 모든 옵션을 꺼도 저장할 수 있습니다.';
   const selected=catalog().filter(w=>w.selected),files=selected.flatMap(w=>w.files.filter(f=>f.selected)),known=files.filter(f=>f.size!=null),unknown=selected.filter(w=>!w.files.length).length;
   $('summary').textContent=`게시물 ${selected.length}개 · 파일 ${files.length}개 · 확인된 용량 ${bytes(known.reduce((s,f)=>s+Number(f.size),0))}${unknown||known.length<files.length?' + 미확인':''}`;
@@ -80,23 +79,18 @@ window.aplay.onState(update);
 window.aplay.onAuthor(url=>{$('embeddedPanel').hidden=true;$('url').value=url;activeTab='all';$('search').value='';render();});
 for(const id of ['search','filter','sort'])$(id).addEventListener('input',render);
 for(const id of ['follow','like','collect'])$(id).addEventListener('change',()=>settingsDirty=true);
-// 동시 다운로드 · 무제한: 바꾸는 즉시 저장 (다음 다운로드부터 적용)
+// 동시 다운로드: 바꾸는 즉시 저장 (다음 다운로드부터 적용)
 let downloadOptionsSaving=false;
 async function saveDownloadOptions(){
   const n=Number($('concurrency').value);
-  if(!Number.isSafeInteger(n)||n<1||n>64){toast('동시 다운로드 수는 1~64 사이의 정수로 입력해 주세요.');$('concurrency').value=String(state.concurrency||6);return;}
-  downloadOptionsSaving=true;try{const r=await window.aplay.call('downloadOptions',{concurrency:n,unlimited:$('concurrencyUnlimited').checked});if(!r.ok)toast(r.error);const s=await call('snapshot');if(s)update(s);}finally{downloadOptionsSaving=false;render();}
+  if(!Number.isSafeInteger(n)||n<1||n>64){toast('동시 다운로드 수는 1~64 사이의 정수로 입력해 주세요.');$('concurrency').value=String(state.concurrency||1);return;}
+  downloadOptionsSaving=true;try{const r=await window.aplay.call('downloadOptions',{concurrency:n});if(!r.ok)toast(r.error);const s=await call('snapshot');if(s)update(s);}finally{downloadOptionsSaving=false;render();}
 }
 $('concurrency').addEventListener('change',saveDownloadOptions);
-$('concurrencyUnlimited').addEventListener('change',async()=>{
-  const box=$('concurrencyUnlimited');
-  if(box.checked&&!await appConfirm('동시 다운로드 수를 제한하지 않으면 선택한 파일을 모두 한꺼번에 받습니다.\n\n· 사이트나 파일 서버가 요청을 제한(429)하거나 일시적으로 차단할 수 있습니다.\n· 짧은 시간에 요청이 몰려 계정 이용이 제한될 위험이 있습니다.\n· 회선과 디스크에 부하가 걸려 속도가 느려지고 실패가 늘 수 있습니다.',{title:'동시 다운로드 무제한',ok:'무제한으로 설정',cancel:'취소',danger:true,note:'문제가 생기면 이 설정을 끄고 동시 다운로드 수를 낮춰 주세요.'})){box.checked=false;return;}
-  $('concurrency').disabled=box.checked;await saveDownloadOptions();
-});
 $('refresh').onclick=()=>{if(!$('url').value){toast('업로더를 먼저 선택해 주세요.');return;}call('refresh',$('url').value,$('scope').value);};
 
 $('login').onclick=()=>call('login');$('logout').onclick=()=>call('logout');$('folderBtn').onclick=()=>call('folder');$('openFolder').onclick=()=>call('openFolder');
-async function saveConsent(){const r=await window.aplay.call('settings',{follow:$('follow').checked,like:$('like').checked,collect:$('collect').checked,concurrency:state.concurrency||6});if(!r.ok){toast(r.error);return false;}settingsDirty=false;update(await call('snapshot'));return true;}
+async function saveConsent(){const r=await window.aplay.call('settings',{follow:$('follow').checked,like:$('like').checked,collect:$('collect').checked,concurrency:state.concurrency||1});if(!r.ok){toast(r.error);return false;}settingsDirty=false;update(await call('snapshot'));return true;}
 $('save').onclick=()=>saveConsent();
 // 다운로드 전 확인: 로그인이나 자동 처리 설정 저장이 안 돼 있으면 팝업에서 바로 처리하게 한다.
 async function downloadReady(){

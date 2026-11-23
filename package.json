@@ -1,6 +1,6 @@
 {
   "name": "aplaybox-downloader",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Aplaybox 작가 자료 다운로드 도구",
   "main": "src/main.js",
   "private": true,

@@ -24,6 +24,27 @@ function safeName(value, limit = 70) {
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(n)) n = '_' + n;
   return n;
 }
+// spaced(gapMs) -> run(fn, signal): fn을 차례로 실행하되 앞 호출이 끝난 뒤 gapMs가 지나야 다음 호출을 시작한다.
+// 동시에 들어온 호출도 줄을 세워 하나씩 실행한다(대기 중 취소되면 그 호출만 빠진다).
+function spaced(gapMs) {
+  let tail = Promise.resolve(), next = 0;
+  return (fn, signal) => {
+    const run = tail.catch(() => {}).then(async () => { check(signal); await pause(Math.max(0, next - Date.now()), signal); try { return await fn(); } finally { next = Date.now() + gapMs; } });
+    tail = run; return run;
+  };
+}
+// postGate({min,max}): 게시물 사이 대기. wait()는 앞 게시물이 시작하거나 끝난 시각(나중 것)에서 min~max ms(무작위)가
+// 지난 뒤 돌아온다. 첫 게시물은 바로 시작. 여러 게시물이 동시에 기다려도 하나씩 차례로 통과한다. done()은 게시물이 끝날 때 부른다.
+function postGate({ min = 5000, max = 15000, random = Math.random } = {}) {
+  let tail = Promise.resolve(), last = 0;
+  return {
+    wait(signal) {
+      const run = tail.catch(() => {}).then(async () => { check(signal); if (last) await pause(Math.max(0, last + min + Math.floor(random() * (max - min + 1)) - Date.now()), signal); last = Date.now(); });
+      tail = run; return run;
+    },
+    done() { last = Date.now(); }
+  };
+}
 function workUrl(w) { return `https://www.aplaybox.com/details/${Number(w.type) === 2 ? 'motion' : 'model'}/${encodeURIComponent(w.id)}`; }
 function requirements(d) {
   const r = d.work_download_rules || {};
@@ -156,4 +177,4 @@ function pipeline({ items, prepare, process: run, prepareLimit = 1, processLimit
     pump();
   });
 }
-module.exports = { pipeline, Waiting, check, pause, authorId, modelFromUrl, safeName, workUrl, requirements, collectPages, fulfill, attachment, dispositionName, download, validCompleted };
+module.exports = { pipeline, spaced, postGate, Waiting, check, pause, authorId, modelFromUrl, safeName, workUrl, requirements, collectPages, fulfill, attachment, dispositionName, download, validCompleted };

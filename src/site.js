@@ -1,7 +1,9 @@
 'use strict';
 const { BrowserWindow } = require('electron');
 const path = require('node:path');
-const { Waiting, pause, check, attachment, workUrl } = require('./core');
+const { Waiting, pause, check, attachment, workUrl, spaced } = require('./core');
+// 자동 계정 행동(팔로우·좋아요·즐겨찾기) 사이의 최소 간격. 앞 행동의 응답을 받은 뒤부터 센다.
+const ACTION_GAP_MS = 1000;
 // Starts the post's 3D model display: the viewer is an iframe from details.aplaybox.com whose play icon (.icon-ziyuan)
 // sits over a blurred preview. Same action as the user clicking it; waits up to ~20 s for the iframe to appear.
 const PLAY_SCRIPT = `(async()=>{const tab=[...document.querySelectorAll('.hover_mouse')].find(e=>/모델 디스플레이|模型展示|Model display/i.test(e.textContent||''));if(tab&&!tab.classList.contains('showTypeActive'))tab.click();return true;})()`;
@@ -40,7 +42,7 @@ const INSTALL_CAPTURE = `(() => {
 })()`;
 
 class Site {
-  constructor(session, log) { this.session = session; this.log = log; this.pending = new Map(); this.previewWindows = new Map(); this.loginWindow = null; this.nextRequest = 0; }
+  constructor(session, log) { this.session = session; this.log = log; this.pending = new Map(); this.previewWindows = new Map(); this.loginWindow = null; this.nextRequest = 0; this.actionQueue = spaced(ACTION_GAP_MS); }
   async identity() {
     const cookies = await this.session.cookies.get({ url: 'https://www.aplaybox.com' });
     return { uid: cookies.find(c => c.name === 'user_uuid_cookie')?.value || '', token: cookies.find(c => c.name === 'access_token_cookie')?.value || '' };
@@ -71,7 +73,7 @@ class Site {
   async action(kind, w, d, signal, uid) {
     check(signal); await this.assertAccount(uid);
     const endpoint = { follow: 'user/followUser', like: 'work/likeWork', collect: 'work/collectWork' }[kind];
-    await this.api(endpoint, kind === 'follow' ? { target_user_uid: d.user_uid } : { work_uuid: w.id, work_type_id: w.type }, signal, uid);
+    await this.actionQueue(() => this.api(endpoint, kind === 'follow' ? { target_user_uid: d.user_uid } : { work_uuid: w.id, work_type_id: w.type }, signal, uid), signal);
   }
   newWindow(title) {
     const win = new BrowserWindow({ width: 1180, height: 860, title, show: false, autoHideMenuBar: true, webPreferences: { session: this.session, preload:path.join(__dirname,'site-preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
@@ -143,4 +145,4 @@ class Site {
     return files;
   }
 }
-module.exports = { Site, FIND_COMPONENT, INSTALL_CAPTURE };
+module.exports = { Site, FIND_COMPONENT, INSTALL_CAPTURE, ACTION_GAP_MS };

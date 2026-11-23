@@ -9,6 +9,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
+const USER_AGENT = require('./user-agent');
 
 // A release carries the same files twice: a 7z (smaller, preferred) and a ZIP (versions up to 2.0.0 only know this one;
 // newer ones fall back to it when the 7z cannot be extracted, e.g. on Windows 10 whose tar has no 7z support).
@@ -46,14 +47,14 @@ async function fetchLatest(repo, fetchImpl = fetch) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '')) return null;
   const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const res = await fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'AplayboxDownloader-updater' }, signal: ctrl.signal });
+    const res = await fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': USER_AGENT }, signal: ctrl.signal });
     if (!res.ok) return null;
     return await res.json();
   } finally { clearTimeout(timer); }
 }
 
 async function download(info, target, onProgress) {
-  const res = await fetch(info.url, { headers: { 'User-Agent': 'AplayboxDownloader-updater' }, redirect: 'follow' });
+  const res = await fetch(info.url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' });
   if (!res.ok || !res.body) throw new Error(`다운로드 실패 (HTTP ${res.status})`);
   const total = Number(res.headers.get('content-length')) || info.size || 0;
   const hash = crypto.createHash('sha256'); const out = fs.createWriteStream(target);

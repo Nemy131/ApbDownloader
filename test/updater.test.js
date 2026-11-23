@@ -1,9 +1,35 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { compareVersions, pickUpdate, fetchLatest } = require('../src/updater');
+const { compareVersions, pickUpdate, fetchLatest, download } = require('../src/updater');
+const USER_AGENT = require('../src/user-agent');
 
 const asset = { name: 'AplayboxDownloader-Windows-x64.zip', size: 10, browser_download_url: 'https://github.com/o/r/releases/download/v1.2.0/AplayboxDownloader-Windows-x64.zip', digest: 'sha256:' + 'a'.repeat(64) };
+
+test('update lookup and redirected asset download send the shared User-Agent', async t => {
+  const http = require('node:http');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    seen.push([req.url, req.headers['user-agent']]);
+    if (req.url === '/archive') res.writeHead(302, { Location: '/file' });
+    res.end(req.url === '/latest' ? '{"tag_name":"v2.1.4"}' : 'test');
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'apb-update-test-'));
+  t.after(() => fs.rm(folder, { recursive: true, force: true }));
+  const release = await fetchLatest('o/r', (url, opts) => {
+    assert.equal(url, 'https://api.github.com/repos/o/r/releases/latest');
+    return fetch(base + '/latest', opts);
+  });
+  assert.equal(release.tag_name, 'v2.1.4');
+  await download({ url: base + '/archive', size: 4 }, path.join(folder, 'asset'));
+  assert.deepEqual(seen, ['/latest', '/archive', '/file'].map(url => [url, USER_AGENT]));
+});
 
 test('compareVersions orders semantic versions and tolerates a v prefix', () => {
   assert.equal(compareVersions('1.2.0', '1.1.9'), 1);

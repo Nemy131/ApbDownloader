@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { Site } = require('./site');
+const APLAYBOX_USER_AGENT = require('./user-agent');
 const C = require('./core');
 const defaultAuthors=require('./default-authors');
 const translator=new (require('./translation').Translator)();
@@ -19,7 +20,7 @@ let win, site, ses, controller, busy = false, job = null, saving = Promise.resol
 let state = { works: [], author: '', message: '업로더 주소를 입력해 목록을 불러오세요.', complete: false };
 let authorLists = {}; // `${uid}|${scope}` -> { uid, scope, sourceUrl, fetchedAt, works } — lists already loaded once
 const AUTHOR_LIST_LIMIT = 30;
-let config = { folder: '', concurrency: 6, concurrencyUnlimited: false, notifyOnComplete: true, autoTranslate:true, accounts: {} }, history = {};
+let config = { folder: '', concurrency: 1, notifyOnComplete: true, autoTranslate:true, accounts: {} }, history = {};
 let activeUid = '', refreshTail = Promise.resolve();
 let bookmarks=[],authorBookmarks=[],embeddedBrowser;
 // 3ds Max import state per post id: {state:'sent'|'done'|'failed', time, message} (data/max-imports.json)
@@ -29,11 +30,12 @@ function allWorks(){return [...new Map([...bookmarks,...state.works].map(w=>[w.i
 let presence=new Map(),presenceFolder='';
 function publicWork(w){const prefix=w.type+':'+w.id+':',found=presenceFolder===config.folder?presence.get(w.id):null;return {...w,maxImport:maxImports[w.id]||null,hasHistory:Object.keys(history).some(k=>k.startsWith(prefix)),inFolder:!!found?.existing,bookmarked:bookmarks.some(b=>b.id===w.id),files:w.files.map(({url,...f})=>({...f,message:f.message==='크기 및 SHA-256 기록 완료'?'':f.message,hasHistory:!!history[prefix+f.id],inFolder:!!found?.files.find(x=>x.id===f.id)?.existing}))};}
 async function scanPresence(){if(!config.folder)throw new Error('저장 폴더를 먼저 선택해 주세요.');const folder=config.folder;const result=await require('./existing').selectMissing(folder,allWorks(),history);if(folder===config.folder){presence=new Map(result.works.map(w=>[w.id,w]));presenceFolder=folder;emit();}return {scanned:result.scanned};}
-// An account without saved settings starts with all three conditions ticked; nothing is acted on until the user saves them (confirmed).
-const settingsFor = uid => config.accounts[uid] || { follow: true, like: true, collect: true, confirmed: false };
+// An account without saved settings starts with all three automatic account actions off (2.1.4~); nothing runs until the user saves (confirmed).
+// Settings already saved for an account are kept as they are.
+const settingsFor = uid => config.accounts[uid] || { follow: false, like: false, collect: false, confirmed: false };
 function cleanError(e) { return String(e?.message || e).replace(/https?:\/\/\S+/g, '[주소 생략]').replace(/Bearer\s+\S+/gi, '[인증 정보 생략]').slice(0, 400); }
 function hiddenAuthors() { return Array.isArray(config.hiddenAuthors) ? config.hiddenAuthors.map(String) : []; }
-function snapshot() { const hidden = hiddenAuthors(); return { ...state, version: app.getVersion(), authorShortcuts: shortcutAuthors(), defaultAuthors: defaultAuthors.filter(a => !hidden.includes(a.id)), hiddenDefaultAuthors: defaultAuthors.filter(a => hidden.includes(a.id)).length, autoTranslate:config.autoTranslate===true, authorBookmarks, authorNew: newCounts(), busy, job, account: activeUid, settings: settingsFor(activeUid), folder: config.folder, concurrency: config.concurrency, concurrencyUnlimited: config.concurrencyUnlimited === true, notifyOnComplete: config.notifyOnComplete !== false, browserPreview: config.browserPreview !== false, translateFileNames: config.translateFileNames === true, maxExe: config.maxExe || '', dataDir, works:state.works.map(publicWork),bookmarks:bookmarks.map(b=>publicWork(state.works.find(w=>w.id===b.id)||b)) }; }
+function snapshot() { const hidden = hiddenAuthors(); return { ...state, version: app.getVersion(), authorShortcuts: shortcutAuthors(), defaultAuthors: defaultAuthors.filter(a => !hidden.includes(a.id)), hiddenDefaultAuthors: defaultAuthors.filter(a => hidden.includes(a.id)).length, autoTranslate:config.autoTranslate===true, authorBookmarks, authorNew: newCounts(), busy, job, account: activeUid, settings: settingsFor(activeUid), folder: config.folder, concurrency: config.concurrency, notifyOnComplete: config.notifyOnComplete !== false, browserPreview: config.browserPreview !== false, translateFileNames: config.translateFileNames === true, maxExe: config.maxExe || '', dataDir, works:state.works.map(publicWork),bookmarks:bookmarks.map(b=>publicWork(state.works.find(w=>w.id===b.id)||b)) }; }
 // The author buttons: built-in authors (unless removed) and the user's own, as one list. A user entry with a built-in
 // author's id replaces it (renamed). Order follows settings.json authorOrder; authors not in it keep their natural place at the end.
 function shortcutAuthors(){
@@ -146,13 +148,15 @@ async function start(mode, signal, ids=null, exclusions={}) {
   for(const w of selected){w.attempted=true;w.picked=false;if(w.status!=='완료')w.status='다운로드 대기';}emit();
   // One procedure per post: its conditions and attachments are checked and its files are downloaded right away, in the
   // same slot. config.concurrency is the number of posts handled at once (there is no separate checking stage or setting).
-  // Site checks are still held to CHECK_MAX at a time so that "unlimited" does not flood the site with requests.
+  // Site checks are held to CHECK_MAX at a time. Posts start 5-15 s (random) after the previous post started or finished (gate).
   const CHECK_MAX = 10; let checking = 0; const checkQueue = [];
   const checkSlot = async fn => { if (checking >= CHECK_MAX) await new Promise(r => checkQueue.push(r)); else checking++; try { return await fn(); } finally { const n = checkQueue.shift(); if (n) n(); else checking--; } };
   const jobs = [];
   let completed = 0;
+  const gate = C.postGate({ min: 5000, max: 15000 });
   const prepare = async w => {
     try {
+      await gate.wait(signal);
       // Re-resolve even known files: signed URLs and account conditions can expire.
       await checkSlot(()=>{C.check(signal);return resolveWork(w,a.uid,options,signal);});
       let present;if(exclusions.folder)present=(await require('./existing').selectMissing(config.folder,[w],history,signal)).works[0];
@@ -162,6 +166,7 @@ async function start(mode, signal, ids=null, exclusions={}) {
       for (const job of mine) { C.check(signal); await transfer(job); }
       return [];
     } catch(e) { if (signal.aborted) throw e; w.status = e instanceof C.Waiting ? '사용자 조작 필요' : '실패'; w.message = cleanError(e); log(w.message,w); await persist(); emit(); return []; }
+    finally { gate.done(); }
   };
   const transfer = async ({w,file}) => {
     const key = `${w.type}:${w.id}:${file.id}`;
@@ -194,7 +199,7 @@ async function start(mode, signal, ids=null, exclusions={}) {
     completed++; w.status = w.files.filter(f=>f.selected).every(f=>f.status==='완료') ? '완료' : w.files.some(f=>f.status==='실패') ? '실패' : w.files.some(f=>f.status==='사용자 조작 필요') ? '사용자 조작 필요' : '대기';
     state.message = `다운로드 처리 ${completed}/${jobs.length}개`; await persist(); emit();
   };
-  await C.pipeline({ items: selected, prepare, process: async () => {}, prepareLimit: config.concurrencyUnlimited === true ? Infinity : config.concurrency, signal });
+  await C.pipeline({ items: selected, prepare, process: async () => {}, prepareLimit: config.concurrency, signal });
   C.check(signal);
   const waiting=selected.filter(w=>w.status==='사용자 조작 필요').length;
   if(config.notifyOnComplete !== false){
@@ -217,7 +222,9 @@ async function loadGlossary(){translator.glossary.set(require('./glossary').pars
 async function bootstrap() {
   await fs.mkdir(dataDir,{recursive:true});
   config = {...config,...await jsonRead('settings.json',{})};if(!config.autoTranslateChosen)config.autoTranslate=true;translator.setEnabled(config.autoTranslate===true); history = await jsonRead('history.json',{}); authorLists = await jsonRead('author-lists.json',{}); translator.load(await jsonRead('translations.json',{}));try{translator.loadBuiltin(require('./builtin/translations.json').entries);}catch{/* optional */}try{translator.configure({engine:config.translateEngine||'google',model:config.translateModel||'haiku',claudePath:config.claudePath||'',fresh:config.translateFresh===true,codexPath:config.codexPath||''});try{if(config.translateParallel!==undefined)translator.configure({parallel:config.translateParallel});}catch{}try{translator.configure({codexModel:config.codexModel||''});}catch{/* a model Codex no longer lists: fall back to the default */};}catch{} await loadGlossary(); let translationSaveTimer=null; translator.onChange=()=>{if(translationSaveTimer)return;translationSaveTimer=setTimeout(()=>{translationSaveTimer=null;void atomic('translations.json',translator.entries()).catch(()=>{});},2000);};
-  if(!Number.isSafeInteger(config.concurrency)||config.concurrency<1)config.concurrency=6;config.concurrencyUnlimited=config.concurrencyUnlimited===true;delete config.checkConcurrency;
+  if(!Number.isSafeInteger(config.concurrency)||config.concurrency<1)config.concurrency=1;
+  config.concurrency = Math.min(config.concurrency, 64);
+  delete config.concurrencyUnlimited;delete config.checkConcurrency;
   state = {...state,...await jsonRead('queue.json',{})}; state.works ||= [];
   authorBookmarks=await jsonRead('authors.json',[]);if(!Array.isArray(authorBookmarks))authorBookmarks=[];maxImports=await jsonRead('max-imports.json',{});if(!maxImports||typeof maxImports!=='object'||Array.isArray(maxImports))maxImports={};
   // A request that was still waiting when the app closed can no longer be matched to its result.
@@ -227,8 +234,12 @@ async function bootstrap() {
   for(const w of bookmarks){w.selected=false;w.files||=[];w.rules||=[];}
   const verificationTarget=process.argv.includes('--verify-download')?state.works.find(w=>w.selected):null;
   for (const w of state.works) { w.selected = false; w.files ||= []; for (const f of w.files) if (f.status !== '완료') f.status = '대기'; if (!['완료','조회 실패'].includes(w.status)) w.status='대기'; }
-  ses = session.fromPartition('aplaybox-private'); ses.setPermissionRequestHandler((wc,permission,cb)=>cb(false)); ses.setPermissionCheckHandler(()=>false);
-  session.defaultSession.webRequest.onBeforeSendHeaders({urls:['https://*.aplaybox.com/*']},(details,callback)=>{callback({requestHeaders:{...details.requestHeaders,Referer:'https://www.aplaybox.com/'}});});
+  ses = session.fromPartition('aplaybox-private');
+  ses.setUserAgent(APLAYBOX_USER_AGENT);
+  ses.setPermissionRequestHandler((wc,permission,cb)=>cb(false)); ses.setPermissionCheckHandler(()=>false);
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*.aplaybox.com/*'] }, (details, callback) => {
+    callback({ requestHeaders: { ...details.requestHeaders, Referer: 'https://www.aplaybox.com/', 'User-Agent': APLAYBOX_USER_AGENT } });
+  });
   ses.on('will-download',(e)=>e.preventDefault()); // Only the validated application download pipeline writes files.
   await restoreSession(); site = new Site(ses,log); await account();
   let timer; ses.cookies.on('changed',()=>{ clearTimeout(timer); timer=setTimeout(()=>{ account().then(a=>{ if(site.closeLoginIfDone(a)&&win&&!win.isDestroyed()){ log('로그인했습니다. 로그인 창을 닫았습니다.'); win.show(); win.focus(); } return saveSession(); }).catch(()=>{}); },500); });
@@ -510,9 +521,9 @@ async function bootstrap() {
   handle('downloadOptions',async o=>{
     const n=Number(o?.concurrency);
     if(!Number.isSafeInteger(n)||n<1||n>64)throw new Error('동시 다운로드 수는 1~64 사이의 정수로 입력해 주세요.');
-    config.concurrency=n;config.concurrencyUnlimited=o.unlimited===true;await atomic('settings.json',config);emit();
+    config.concurrency=n;await atomic('settings.json',config);emit();
   });
-  handle('settings',async options=>{ if(busy) throw new Error('작업 완료 후 설정을 변경해 주세요.'); const concurrency=Number(options.concurrency);if(!Number.isSafeInteger(concurrency)||concurrency<1)throw new Error('동시 다운로드 수는 1 이상의 정수로 입력해 주세요.');const a=await site.assertAccount(); config.accounts[a.uid]={follow:options.follow===true,like:options.like===true,collect:options.collect===true,confirmed:true}; config.concurrency=concurrency; await atomic('settings.json',config); activeUid=a.uid; emit(); });
+  handle('settings',async options=>{ if(busy) throw new Error('작업 완료 후 설정을 변경해 주세요.'); const concurrency=Number(options.concurrency);if(!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>64)throw new Error('동시 다운로드 수는 1~64 사이의 정수로 입력해 주세요.');const a=await site.assertAccount(); config.accounts[a.uid]={follow:options.follow===true,like:options.like===true,collect:options.collect===true,confirmed:true}; config.concurrency=concurrency; await atomic('settings.json',config); activeUid=a.uid; emit(); });
   handle('folder',async()=>{if(busy) throw new Error('작업 완료 후 폴더를 변경해 주세요.'); const r=await dialog.showOpenDialog(win,{defaultPath:config.folder||undefined,properties:['openDirectory','createDirectory']}); if(!r.canceled){config.folder=r.filePaths[0];await atomic('settings.json',config);emit();}});
   handle('openFolder',async()=>{
     if(!config.folder)throw new Error('저장 폴더를 먼저 선택해 주세요.');
