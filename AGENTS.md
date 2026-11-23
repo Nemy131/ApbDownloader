@@ -12,7 +12,7 @@
 
 ## 프로젝트 개요
 Aplaybox(www.aplaybox.com) 업로더의 모델·모션 배포 자료를 목록으로 보고, 다운로드 조건(팔로우·좋아요·즐겨찾기)을 처리해 내려받는 Windows용 Electron 포터블 앱.
-- 저장소: `homerthegood/ApbDownloader` (공개). 자동 업데이트는 이 저장소의 최신 GitHub 릴리스를 확인한다.
+- 저장소: `Nemy131/ApbDownloader` (공개). 자동 업데이트는 이 저장소의 최신 GitHub 릴리스를 확인한다.
 - 런타임: Electron 45.3.1 (Build.ps1이 공식 ZIP을 받아 SHA-256 검증 후 `vendor/electron`에 풂). Node.js 설치는 필요 없다.
 
 ## 폴더 구조

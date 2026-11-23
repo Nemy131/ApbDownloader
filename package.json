@@ -4,8 +4,8 @@
   "description": "Aplaybox 작가 자료 다운로드 도구",
   "main": "src/main.js",
   "private": true,
-  "updateRepo": "homerthegood/ApbDownloader",
-  "repository": "github:homerthegood/ApbDownloader",
+  "updateRepo": "Nemy131/ApbDownloader",
+  "repository": "github:Nemy131/ApbDownloader",
   "scripts": { "start": "electron .", "test": "node --test test/*.test.js" },
   "devDependencies": { "electron": "45.3.1" }
 }
