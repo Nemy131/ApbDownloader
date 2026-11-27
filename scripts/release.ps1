@@ -3,6 +3,8 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1                 # build + smoke test + ZIP
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -InstallDir D:\Apps\AplayboxDownloader
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Publish        # + copy to the NAS share + latest.json + git tag
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Publish -GitHub # + also a GitHub release (bridge for builds
+#                                                                                       that still update from GitHub, i.e. v2.1.4 and older)
 #
 # Rules (see AGENTS.md): the version comes from package.json; docs/handoff/v<version>.md must exist before -Publish
 # and its "## 릴리스 노트" section becomes the update notes. data folders are never copied or zipped.
@@ -10,6 +12,8 @@
 # <updateSource>\latest.json last, so running apps never see a version whose files are not complete.
 param(
   [switch]$Publish,
+  [switch]$GitHub,
+  [string]$GitHubRepo = 'Nemy131/ApbDownloader',
   [string]$InstallDir = '',
   [switch]$SkipSmoke
 )
@@ -26,6 +30,17 @@ if (-not (Test-Path $handoff)) {
   Write-Warning "Missing $handoff (required before -Publish)."
 }
 
+if ($GitHub -and -not $Publish) { throw '-GitHub needs -Publish.' }
+if ($GitHub) {
+  $gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
+  if (-not $gh) { $gh = 'C:\Program Files\GitHub CLI\gh.exe' }
+  if (-not (Test-Path $gh)) { throw 'gh CLI not found (needed for -GitHub). Install it and run gh auth login.' }
+  & $gh release view "v$version" --repo $GitHubRepo 2>$null | Out-Null
+  if ($LASTEXITCODE -eq 0) { throw "GitHub release v$version already exists in $GitHubRepo." }
+  $head = (& git rev-parse HEAD).Trim()
+  & $gh api "repos/$GitHubRepo/commits/$head" --silent 2>$null
+  if ($LASTEXITCODE) { throw "Commit $head is not on GitHub ($GitHubRepo). Push it first." }
+}
 if ($Publish) {
   $dirty = & git status --porcelain
   if ($dirty) { throw "Working tree is not clean. Commit first:`n$dirty" }
@@ -143,5 +158,19 @@ if ($Publish) {
   if ($check.version -ne $version -or @($check.files).Count -ne 2) { throw 'latest.json on the share was not written correctly' }
   "latest.json -> $version"
   & git tag "v$version"; if ($LASTEXITCODE) { throw 'git tag failed' }
+}
+
+# 6. Optional GitHub release: builds up to v2.1.4 only check GitHub, so one release there moves them onto this version,
+# which from then on updates from the NAS share. The tag is created on GitHub at the pushed commit.
+if ($GitHub) {
+  $notes = Join-Path $relDir 'release-notes.md'
+  [IO.File]::WriteAllText($notes, $m.Groups[1].Value.Trim() + "`n", (New-Object Text.UTF8Encoding $false))
+  & $gh release create "v$version" $seven $zip --repo $GitHubRepo --target $head --title "v$version" --notes-file $notes; if ($LASTEXITCODE) { throw 'gh release create failed' }
+  $assets = (& $gh release view "v$version" --repo $GitHubRepo --json assets | ConvertFrom-Json).assets
+  foreach ($pair in @(@('AplayboxDownloader-Windows-x64.zip', $sha), @('AplayboxDownloader-Windows-x64.7z', $sevenSha))) {
+    $digest = ($assets | Where-Object { $_.name -eq $pair[0] }).digest
+    "github digest $($pair[0]) $digest"
+    if ($digest -ne "sha256:$($pair[1])") { throw "uploaded asset digest does not match the local file: $($pair[0])" }
+  }
 }
 exit 0

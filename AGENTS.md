@@ -60,6 +60,7 @@ ELECTRON_RUN_AS_NODE=1 ./vendor/electron/electron.exe --check src/main.js
 4. 테스트 통과 확인 후 커밋.
 5. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1 -Publish`
    - 빌드 → 스모크 테스트 → 언어 팩 정리(ko·en-US만 남김) → `release/v<버전>/AplayboxDownloader-Windows-x64.zip`과 `.7z`(반디집 `bz.exe` 필요, 없으면 `-Publish`는 중단) → `<updateSource>\v<버전>\`에 두 파일 복사 → 공유 폴더에 복사된 파일의 SHA-256 대조 → `latest.json`(노트 = 인수인계 파일의 `## 릴리스 노트` 절)을 임시 파일로 쓴 뒤 마지막에 교체 → 로컬 git 태그 `v<버전>`(푸시는 하지 않음).
+   - `-GitHub`를 함께 주면 같은 파일로 `Nemy131/ApbDownloader`(바꾸려면 `-GitHubRepo`)에 GitHub 릴리스도 만든다. v2.1.4 이하는 GitHub만 확인하므로, 그 PC들을 NAS 버전으로 옮길 때 한 번 쓴다. 현재 커밋이 그 저장소에 푸시되어 있어야 하고 gh CLI 로그인이 필요하다.
    - 공유 폴더에 이미 `v<버전>` 폴더가 있으면 거부한다. 게시하는 PC는 공유 폴더에 쓰기 권한이 있어야 한다.
    - 자기 PC의 포터블 설치 폴더도 갱신하려면 `-InstallDir <폴더>` (그 폴더에서 앱이 실행 중이면 건너뜀, data 유지).
 6. 공유 폴더 구조: `latest.json` = `{version, notes, published, files:[{format: 7z|zip, path: "v<버전>/AplayboxDownloader-Windows-x64.7z", size, sha256}]}`. 앱은 `v<버전>/` 아래의 정해진 파일 이름, 크기, SHA-256이 모두 있는 항목만 쓴다(`updater.js` `pickUpdate`). 파일 이름을 바꾸지 말 것. 7z를 먼저 받고(Windows 내장 `tar.exe`로 해제) 실패하면 ZIP으로 넘어간다.
