@@ -570,7 +570,7 @@ async function bootstrap() {
   handle('openPost',(id,play)=>{const w=allWorks().find(w=>w.id===id);if(w)return site.open(w,{play:play===true});});
   await win.loadFile(path.join(__dirname,'ui/index.html'));
   setTimeout(()=>{void checkBookmarkUpdates().catch(()=>{});},1500);
-  setTimeout(()=>require('./updater').checkOnStartup({app,dialog,shell,win,repo:require('../package.json').updateRepo,dataDir,onLog:m=>log(m)}),3000);
+  setTimeout(()=>require('./updater').checkOnStartup({app,dialog,shell,win,source:require('../package.json').updateSource,dataDir,onLog:m=>log(m)}),3000);
   win.on('closed',()=>{controller?.abort();site.closePending();app.quit();});
 }
 app.whenReady().then(bootstrap).catch(async e=>{await fs.mkdir(dataDir,{recursive:true});await fs.writeFile(path.join(dataDir,'startup-error.txt'),cleanError(e));app.quit();});

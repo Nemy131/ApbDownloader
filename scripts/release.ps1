@@ -2,10 +2,12 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1                 # build + smoke test + ZIP
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -InstallDir D:\Apps\AplayboxDownloader
-#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Publish        # + git tag/push + GitHub release
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 -Publish        # + copy to the NAS share + latest.json + git tag
 #
 # Rules (see AGENTS.md): the version comes from package.json; docs/handoff/v<version>.md must exist before -Publish
-# and its "## 릴리스 노트" section becomes the GitHub release notes. data folders are never copied or zipped.
+# and its "## 릴리스 노트" section becomes the update notes. data folders are never copied or zipped.
+# -Publish copies both archives to <updateSource>\v<version>\, checks their SHA-256 on the share, and replaces
+# <updateSource>\latest.json last, so running apps never see a version whose files are not complete.
 param(
   [switch]$Publish,
   [string]$InstallDir = '',
@@ -16,9 +18,9 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $pkg = Get-Content (Join-Path $root 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $version = $pkg.version
-$repo = $pkg.updateRepo
+$share = $pkg.updateSource
 $handoff = Join-Path $root "docs\handoff\v$version.md"
-"version $version  repo $repo"
+"version $version  share $share"
 if (-not (Test-Path $handoff)) {
   if ($Publish) { throw "Missing $handoff. Write the handoff note for this version first (copy docs\handoff\TEMPLATE.md)." }
   Write-Warning "Missing $handoff (required before -Publish)."
@@ -28,6 +30,8 @@ if ($Publish) {
   $dirty = & git status --porcelain
   if ($dirty) { throw "Working tree is not clean. Commit first:`n$dirty" }
   if (& git tag --list "v$version") { throw "Tag v$version already exists. Bump the version in package.json." }
+  if (-not $share -or -not (Test-Path -LiteralPath $share)) { throw "Update share not reachable: $share (package.json updateSource)" }
+  if (Test-Path -LiteralPath (Join-Path $share "v$version")) { throw "v$version already exists on the share. Bump the version in package.json." }
 }
 
 # 1. Build (Build.ps1 downloads and verifies the Electron runtime into vendor/ on first use)
@@ -113,24 +117,31 @@ if (-not $bz) {
   "7z  $seven size=$((Get-Item $seven).Length) sha256=$sevenSha"
 }
 
-# 5. Publish
+# 5. Publish to the NAS share
 if ($Publish) {
-  $gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
-  if (-not $gh) { $gh = 'C:\Program Files\GitHub CLI\gh.exe' }
   $text = [IO.File]::ReadAllText($handoff, [Text.Encoding]::UTF8)
   $m = [regex]::Match($text, '(?ms)^## 릴리스 노트\s*\r?\n(.*?)(?=^## |\z)')
   if (-not $m.Success -or -not $m.Groups[1].Value.Trim()) { throw "No '## 릴리스 노트' section in $handoff" }
-  $notes = Join-Path $relDir 'release-notes.md'
-  [IO.File]::WriteAllText($notes, $m.Groups[1].Value.Trim() + "`n`n인수인계: docs/handoff/v$version.md`n", (New-Object Text.UTF8Encoding $false))
-  & git tag "v$version"; if ($LASTEXITCODE) { throw 'git tag failed' }
-  & git push origin HEAD; if ($LASTEXITCODE) { throw 'git push failed' }
-  & git push origin "v$version"; if ($LASTEXITCODE) { throw 'git push tag failed' }
-  & $gh release create "v$version" $seven $zip --repo $repo --title "v$version" --notes-file $notes; if ($LASTEXITCODE) { throw 'gh release create failed' }
-  $assets = (& $gh release view "v$version" --repo $repo --json assets | ConvertFrom-Json).assets
-  foreach ($pair in @(@('AplayboxDownloader-Windows-x64.zip', $sha), @('AplayboxDownloader-Windows-x64.7z', $sevenSha))) {
-    $digest = ($assets | Where-Object { $_.name -eq $pair[0] }).digest
-    "github digest $($pair[0]) $digest"
-    if ($digest -ne "sha256:$($pair[1])") { throw "uploaded asset digest does not match the local file: $($pair[0])" }
+  $verDir = Join-Path $share "v$version"
+  New-Item -ItemType Directory -Force $verDir | Out-Null
+  $files = @()
+  foreach ($pair in @(@($seven, $sevenSha, '7z'), @($zip, $sha, 'zip'))) {
+    $name = Split-Path -Leaf $pair[0]
+    $dest = Join-Path $verDir $name
+    Copy-Item -LiteralPath $pair[0] -Destination $dest -Force
+    $copied = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLower()
+    "share $dest sha256=$copied"
+    if ($copied -ne $pair[1]) { throw "copied file on the share does not match the local file: $name" }
+    $files += [ordered]@{ format = $pair[2]; path = "v$version/$name"; size = (Get-Item -LiteralPath $dest).Length; sha256 = $copied }
   }
+  $manifest = [ordered]@{ version = $version; notes = $m.Groups[1].Value.Trim(); published = (Get-Date).ToUniversalTime().ToString('s') + 'Z'; files = $files }
+  $latest = Join-Path $share 'latest.json'
+  $tmp = Join-Path $share 'latest.json.tmp'
+  [IO.File]::WriteAllText($tmp, ($manifest | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
+  Move-Item -LiteralPath $tmp -Destination $latest -Force
+  $check = [IO.File]::ReadAllText($latest, [Text.Encoding]::UTF8) | ConvertFrom-Json
+  if ($check.version -ne $version -or @($check.files).Count -ne 2) { throw 'latest.json on the share was not written correctly' }
+  "latest.json -> $version"
+  & git tag "v$version"; if ($LASTEXITCODE) { throw 'git tag failed' }
 }
 exit 0

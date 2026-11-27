@@ -5,14 +5,14 @@
 
 ## 응답·작업 규칙
 - 사용자와 UI 문구는 한국어, 사무적인 말투.
-- 사용자의 확인 없이 GitHub 릴리스·푸시를 하지 않는다. "빌드만"이라고 하면 `scripts/release.ps1`을 `-Publish` 없이 실행한다.
+- 사용자의 확인 없이 NAS 게시(`-Publish`)·푸시를 하지 않는다. "빌드만"이라고 하면 `scripts/release.ps1`을 `-Publish` 없이 실행한다.
 - 개인 정보(이메일, 로그인 세션, 계정 ID)를 커밋·릴리스·로그에 넣지 않는다. 커밋 이메일은 GitHub noreply.
 - `data/`(session.enc, history.json, bookmarks, settings, translations.json 등)는 절대 빌드·ZIP·커밋에 포함하지 않는다. 사용자 설치 폴더의 `data/`를 덮어쓰지 않는다.
 - `research/`(사이트 소스 덤프)는 공개하지 않는다(.gitignore).
 
 ## 프로젝트 개요
 Aplaybox(www.aplaybox.com) 업로더의 모델·모션 배포 자료를 목록으로 보고, 다운로드 조건(팔로우·좋아요·즐겨찾기)을 처리해 내려받는 Windows용 Electron 포터블 앱.
-- 저장소: `Nemy131/ApbDownloader` (공개). 자동 업데이트는 이 저장소의 최신 GitHub 릴리스를 확인한다.
+- 이 저장소는 `Nemy131/ApbDownloader`의 사내 배포용 포크다. 자동 업데이트는 GitHub 대신 회사 NAS 공유 폴더(`package.json`의 `updateSource`, UNC 경로)를 확인한다.
 - 런타임: Electron 45.3.1 (Build.ps1이 공식 ZIP을 받아 SHA-256 검증 후 `vendor/electron`에 풂). Node.js 설치는 필요 없다.
 
 ## 폴더 구조
@@ -26,7 +26,7 @@ Aplaybox(www.aplaybox.com) 업로더의 모델·모션 배포 자료를 목록�
 | `src/translation.js` | 번역기: 엔진 선택(Google 무료 엔드포인트 / Claude), Claude 묶음 대기열, 실패 시 Google 대체, 캐시(`data/translations.json`) |
 | `src/claude-cli.js`, `src/glossary.js` | Claude Code CLI 탐색·실행·응답 해석 / 게임 용어집(기본 + `data/glossary.txt`) |
 | `src/existing.js` | 저장 폴더에 이미 있는 모델 판정 |
-| `src/updater.js` | 시작 시 GitHub 릴리스 확인 → 다운로드 → 앱 종료 후 교체(robocopy, data 제외) → 재시작 |
+| `src/updater.js` | 시작 시 NAS 공유 폴더의 `latest.json` 확인 → 임시 폴더로 복사(크기·SHA-256 확인) → 앱 종료 후 교체(robocopy, data 제외) → 재시작 |
 | `src/maxbridge.js` + `src/max/` | 3ds Max 임포트 연동(아래 참고) |
 | `src/ui/` | 한국어 UI. `ui.js`(목록·설정), `activity.js`(작업 현황·플로팅 버튼), `update.js`(업데이트 진행), `theme.js` |
 | `src/ui/*.css` | `style.css` → `readability.css`(공통) → `theme-bento.css`(화면 이름 **Light**, 기본) / `theme-dark.css` / `theme-aero.css` |
@@ -59,10 +59,12 @@ ELECTRON_RUN_AS_NODE=1 ./vendor/electron/electron.exe --check src/main.js
 3. 이 파일(AGENTS.md)의 구조·규칙이 바뀌었으면 함께 갱신한다.
 4. 테스트 통과 확인 후 커밋.
 5. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1 -Publish`
-   - 빌드 → 스모크 테스트 → 언어 팩 정리(ko·en-US만 남김) → `release/v<버전>/AplayboxDownloader-Windows-x64.zip`과 `.7z`(반디집 `bz.exe` 필요, 없으면 `-Publish`는 중단) → 태그 `v<버전>` 푸시 → GitHub 릴리스(노트 = 인수인계 파일의 `## 릴리스 노트` 절) → 업로드 SHA-256 대조.
+   - 빌드 → 스모크 테스트 → 언어 팩 정리(ko·en-US만 남김) → `release/v<버전>/AplayboxDownloader-Windows-x64.zip`과 `.7z`(반디집 `bz.exe` 필요, 없으면 `-Publish`는 중단) → `<updateSource>\v<버전>\`에 두 파일 복사 → 공유 폴더에 복사된 파일의 SHA-256 대조 → `latest.json`(노트 = 인수인계 파일의 `## 릴리스 노트` 절)을 임시 파일로 쓴 뒤 마지막에 교체 → 로컬 git 태그 `v<버전>`(푸시는 하지 않음).
+   - 공유 폴더에 이미 `v<버전>` 폴더가 있으면 거부한다. 게시하는 PC는 공유 폴더에 쓰기 권한이 있어야 한다.
    - 자기 PC의 포터블 설치 폴더도 갱신하려면 `-InstallDir <폴더>` (그 폴더에서 앱이 실행 중이면 건너뜀, data 유지).
-   - gh CLI 로그인 필요(`gh auth login`).
-6. 자동 업데이트는 릴리스 자산 이름 `AplayboxDownloader-Windows-x64.7z`·`.zip`과 GitHub가 주는 `digest`(sha256)에 의존한다. 이름을 바꾸지 말 것. 7z를 먼저 받고(Windows 내장 `tar.exe`로 해제) 실패하면 ZIP으로 넘어간다. 2.0.0 이하 버전은 ZIP만 알기 때문에 ZIP을 릴리스에서 빼면 그 사용자들의 자동 업데이트가 끊긴다.
+6. 공유 폴더 구조: `latest.json` = `{version, notes, published, files:[{format: 7z|zip, path: "v<버전>/AplayboxDownloader-Windows-x64.7z", size, sha256}]}`. 앱은 `v<버전>/` 아래의 정해진 파일 이름, 크기, SHA-256이 모두 있는 항목만 쓴다(`updater.js` `pickUpdate`). 파일 이름을 바꾸지 말 것. 7z를 먼저 받고(Windows 내장 `tar.exe`로 해제) 실패하면 ZIP으로 넘어간다.
+   - 사내망 밖이거나 공유 폴더에 접근하지 못하면 아무것도 묻지 않고 넘어간다(`latest.json` 읽기 10초, 복사 중 무응답 60초 제한).
+   - GitHub 원본 빌드를 쓰는 PC는 이 포크 빌드를 한 번 직접 설치해야 이후 NAS로 업데이트된다.
 
 ## 구현 규칙·주의
 - CSP: `default-src 'self'; style-src 'self'; script-src 'self'` — 인라인 스타일/스크립트 금지, 외부 리소스 금지.

@@ -1,7 +1,10 @@
 'use strict';
-// Checks the GitHub "latest release" of this app on startup, asks the user, and replaces the portable folder in place.
+// Checks the company NAS share for a newer version on startup, asks the user, and replaces the portable folder in place.
+// The share (package.json "updateSource", a UNC path such as \\server\share\folder) holds:
+//   latest.json                                  {version, notes, files:[{format, path, size, sha256}]}
+//   v<version>\AplayboxDownloader-Windows-x64.7z  (and .zip)
 // The data folder (session, history, bookmarks, settings) is never touched.
-// Flow: confirm dialog -> download (+size/SHA-256 check) -> extract while the app is still running ->
+// Flow: confirm dialog -> copy from the share (+size/SHA-256 check) -> extract while the app is still running ->
 // hand off a small copy-and-restart script that outlives this process -> quit.
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -9,13 +12,14 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
-const USER_AGENT = require('./user-agent');
 
-// A release carries the same files twice: a 7z (smaller, preferred) and a ZIP (versions up to 2.0.0 only know this one;
-// newer ones fall back to it when the 7z cannot be extracted, e.g. on Windows 10 whose tar has no 7z support).
-const ASSET_PATTERN = /^AplayboxDownloader-Windows-x64\.(7z|zip)$/i;
-const ASSET_HOST = /^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//;
+// A version carries the same files twice: a 7z (smaller, preferred) and a ZIP (fallback when the 7z cannot be
+// extracted, e.g. on Windows 10 whose tar has no 7z support).
+const FILE_NAME = /^AplayboxDownloader-Windows-x64\.(7z|zip)$/i;
+const MANIFEST = 'latest.json';
 const RESULT_FILE = 'update-result.json';
+const READ_TIMEOUT = 10000;   // manifest read; an unreachable share can otherwise block for a long time
+const STALL_TIMEOUT = 60000;  // no data from the share for this long while copying an archive
 
 function parseVersion(v) {
   const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v || '').trim());
@@ -27,47 +31,62 @@ function compareVersions(a, b) {
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i] ? 1 : -1;
   return 0;
 }
-// Pure: turns a GitHub release JSON into update info, or null when not newer / unusable.
-function pickUpdate(release, currentVersion) {
-  if (!release || release.draft || release.prerelease) return null;
-  const version = String(release.tag_name || '').replace(/^v/i, '');
-  if (!parseVersion(version) || compareVersions(version, currentVersion) <= 0) return null;
-  const files = (release.assets || []).filter(a => ASSET_PATTERN.test(a.name || '') && ASSET_HOST.test(a.browser_download_url || '')).map(a => ({
-    format: /\.7z$/i.test(a.name) ? '7z' : 'zip', url: a.browser_download_url, size: Number(a.size) || 0,
-    sha256: /^sha256:([0-9a-f]{64})$/i.exec(a.digest || '')?.[1]?.toLowerCase() || null
-  })).sort((a, b) => (a.format === '7z' ? 0 : 1) - (b.format === '7z' ? 0 : 1));
+// Only absolute local paths or UNC paths (\\server\share\...) are accepted as the update source.
+function validSource(source) {
+  const s = String(source || '');
+  return /^\\\\[^\\/]+\\[^\\/]+/.test(s) || /^[A-Za-z]:[\\/]/.test(s) || (process.platform !== 'win32' && path.isAbsolute(s));
+}
+// Pure: turns latest.json into update info, or null when not newer / unusable. Every file must sit in
+// v<version>/ under the source, carry its size and SHA-256, and use the release file name.
+function pickUpdate(manifest, currentVersion, source) {
+  if (!manifest || typeof manifest !== 'object' || !validSource(source)) return null;
+  const version = String(manifest.version || '').replace(/^v/i, '');
+  if (!/^\d+\.\d+\.\d+$/.test(version) || compareVersions(version, currentVersion) <= 0) return null;
+  const files = (Array.isArray(manifest.files) ? manifest.files : []).map(f => {
+    const parts = String(f?.path || '').split(/[\\/]/);
+    if (parts.length !== 2 || parts[0] !== 'v' + version || !FILE_NAME.test(parts[1])) return null;
+    const sha256 = /^[0-9a-f]{64}$/i.test(String(f.sha256 || '')) ? String(f.sha256).toLowerCase() : null;
+    const size = Number(f.size);
+    if (!sha256 || !Number.isSafeInteger(size) || size <= 0) return null;
+    return { format: /\.7z$/i.test(parts[1]) ? '7z' : 'zip', path: path.join(source, parts[0], parts[1]), size, sha256 };
+  }).filter(Boolean).sort((a, b) => (a.format === '7z' ? 0 : 1) - (b.format === '7z' ? 0 : 1));
   if (!files.length) return null;
-  // url/size/sha256 describe the preferred file; files lists every usable one in the order to try.
-  return { version, notes: String(release.body || '').trim(), ...files[0], files, page: release.html_url || '' };
+  // path/size/sha256 describe the preferred file; files lists every usable one in the order to try.
+  return { version, notes: String(manifest.notes || '').trim(), ...files[0], files };
 }
 
-const releasesPage = repo => `https://github.com/${repo}/releases`;
-
-async function fetchLatest(repo, fetchImpl = fetch) {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '')) return null;
-  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 10000);
-  try {
-    const res = await fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': USER_AGENT }, signal: ctrl.signal });
-    if (!res.ok) return null;
-    return await res.json();
-  } finally { clearTimeout(timer); }
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
 }
 
-async function download(info, target, onProgress) {
-  const res = await fetch(info.url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' });
-  if (!res.ok || !res.body) throw new Error(`다운로드 실패 (HTTP ${res.status})`);
-  const total = Number(res.headers.get('content-length')) || info.size || 0;
+async function readManifest(source, { readFile = fsp.readFile, timeout = READ_TIMEOUT } = {}) {
+  if (!validSource(source)) return null;
+  const text = await withTimeout(readFile(path.join(source, MANIFEST), 'utf8'), timeout, '업데이트 폴더에 연결하지 못했습니다.');
+  return JSON.parse(String(text).replace(/^\ufeff/, ''));
+}
+
+// Copies the archive from the share into the temp folder while hashing it, so the file that is checked is the one extracted.
+async function download(info, target, onProgress, { stallTimeout = STALL_TIMEOUT } = {}) {
+  const input = fs.createReadStream(info.path, { highWaterMark: 1 << 20 });
+  const total = info.size || 0;
   const hash = crypto.createHash('sha256'); const out = fs.createWriteStream(target);
-  let loaded = 0;
+  let loaded = 0, timer = null, stalled = false;
+  const arm = () => { clearTimeout(timer); timer = setTimeout(() => { stalled = true; input.destroy(new Error('업데이트 폴더에서 파일을 읽는 중 응답이 없습니다.')); }, stallTimeout); };
   try {
-    for await (const chunk of res.body) {
+    arm();
+    for await (const chunk of input) {
+      arm();
       hash.update(chunk); loaded += chunk.length;
       if (!out.write(chunk)) await new Promise(r => out.once('drain', r));
       onProgress?.(loaded, total);
     }
-  } finally { await new Promise(r => out.end(r)); }
-  if (info.size && loaded !== info.size) throw new Error('받은 파일 크기가 릴리스 정보와 다릅니다.');
-  if (info.sha256 && hash.digest('hex') !== info.sha256) throw new Error('받은 파일의 SHA-256 값이 릴리스 정보와 다릅니다.');
+  } catch (e) {
+    if (stalled) throw new Error('업데이트 폴더에서 파일을 읽는 중 응답이 없습니다.');
+    throw new Error('업데이트 파일을 읽지 못했습니다: ' + (e?.code || e?.message || e));
+  } finally { clearTimeout(timer); await new Promise(r => out.end(r)); }
+  if (info.size && loaded !== info.size) throw new Error('복사한 파일 크기가 업데이트 정보와 다릅니다.');
+  if (info.sha256 && hash.digest('hex') !== info.sha256) throw new Error('복사한 파일의 SHA-256 값이 업데이트 정보와 다릅니다.');
 }
 
 const powershell = () => path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
@@ -138,29 +157,30 @@ async function reportPreviousResult({ win, dataDir, app }) {
   else send({ phase: 'error', version: r.version, message: r.message || '새 파일이 적용되지 않았습니다. data/update.log를 확인해 주세요.' }, true);
 }
 
-// Release notes in their own dialog. Without notes, the GitHub releases page opens instead.
-async function showNotes({ dialog, shell, win, info, repo }) {
-  if (!info.notes) { await shell?.openExternal(releasesPage(repo)).catch(() => {}); return; }
+// Release notes in their own dialog. Without notes, the update folder on the share opens instead.
+const openSource = async (shell, source) => { try { await shell?.openPath(source); } catch {} };
+async function showNotes({ dialog, shell, win, info, source }) {
+  if (!info.notes) { await openSource(shell, source); return; }
   if (!win || win.isDestroyed()) return;
   const notes = info.notes.length > 3000 ? info.notes.slice(0, 3000) + '\n…' : info.notes;
   const { response } = await dialog.showMessageBox(win, {
-    type: 'none', title: '업데이트 로그', buttons: ['돌아가기', 'GitHub에서 전체 기록 보기'], defaultId: 0, cancelId: 0, noLink: true,
+    type: 'none', title: '업데이트 로그', buttons: ['돌아가기', '업데이트 폴더 열기'], defaultId: 0, cancelId: 0, noLink: true,
     message: `버전 ${info.version} 변경 사항`, detail: notes
   });
-  if (response === 1) await shell?.openExternal(releasesPage(repo)).catch(() => {});
+  if (response === 1) await openSource(shell, source);
 }
 
 // Called once after the main window has loaded. Never throws.
-async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog }) {
+async function checkOnStartup({ app, dialog, shell, win, source, dataDir, onLog, platform = process.platform }) {
   const send = sender(win);
   let info = null;
   try {
     await reportPreviousResult({ win, dataDir, app });
-    if (!app.isPackaged || process.platform !== 'win32' || !repo) return;
+    if (!app.isPackaged || platform !== 'win32' || !validSource(source)) return;
     const appDir = path.dirname(process.execPath);
     const skipFile = path.join(dataDir, 'update-skip.json');
-    let release = null; try { release = await fetchLatest(repo); } catch { return; } // offline or rate-limited: stay quiet
-    info = pickUpdate(release, app.getVersion());
+    let manifest = null; try { manifest = await readManifest(source); } catch { return; } // off the company network or share unreachable: stay quiet
+    info = pickUpdate(manifest, app.getVersion(), source);
     if (!info) return;
     let skipped = ''; try { skipped = JSON.parse(await fsp.readFile(skipFile, 'utf8')).version || ''; } catch {}
     if (skipped === info.version) return;
@@ -174,13 +194,13 @@ async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog })
         message: `새 버전 ${info.version}이 있습니다. (현재 ${app.getVersion()})`,
         detail: '지금 업데이트하면 파일을 받은 뒤 앱을 다시 시작합니다. 로그인 정보·기록·북마크·설정이 있는 data 폴더는 그대로 유지됩니다.'
       })).response;
-      if (response === 3) await showNotes({ dialog, shell, win, info, repo });
+      if (response === 3) await showNotes({ dialog, shell, win, info, source });
     }
     if (response === 2) { await fsp.writeFile(skipFile, JSON.stringify({ version: info.version }), 'utf8'); return; }
     if (response !== 0) return;
 
     const temp = await fsp.mkdtemp(path.join(os.tmpdir(), 'aplaybox-update-'));
-    // Try each release file in turn (7z first); the next one is used only when this one fails.
+    // Try each file in turn (7z first); the next one is used only when this one fails.
     let src = '';
     for (const [i, file] of info.files.entries()) {
       const zip = path.join(temp, 'AplayboxDownloader-Windows-x64.' + file.format), dest = path.join(temp, 'extract-' + file.format);
@@ -212,4 +232,4 @@ async function checkOnStartup({ app, dialog, shell, win, repo, dataDir, onLog })
   }
 }
 
-module.exports = { parseVersion, compareVersions, pickUpdate, fetchLatest, download, extract, checkOnStartup };
+module.exports = { parseVersion, compareVersions, validSource, pickUpdate, readManifest, download, extract, checkOnStartup };
