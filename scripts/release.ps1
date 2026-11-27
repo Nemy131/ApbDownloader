@@ -31,15 +31,20 @@ if (-not (Test-Path $handoff)) {
 }
 
 if ($GitHub -and -not $Publish) { throw '-GitHub needs -Publish.' }
+# Runs a native command only for its exit code. Windows PowerShell 5.1 turns redirected stderr into a terminating
+# error while $ErrorActionPreference is 'Stop', so it is relaxed here; the output is discarded.
+function Succeeds([scriptblock]$command) {
+  $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  try { & $command 2>&1 | Out-Null; return ($LASTEXITCODE -eq 0) } finally { $ErrorActionPreference = $old }
+}
 if ($GitHub) {
   $gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
   if (-not $gh) { $gh = 'C:\Program Files\GitHub CLI\gh.exe' }
   if (-not (Test-Path $gh)) { throw 'gh CLI not found (needed for -GitHub). Install it and run gh auth login.' }
-  & $gh release view "v$version" --repo $GitHubRepo 2>$null | Out-Null
-  if ($LASTEXITCODE -eq 0) { throw "GitHub release v$version already exists in $GitHubRepo." }
+  if (-not (Succeeds { & $gh auth status })) { throw 'gh CLI is not logged in. Run gh auth login first.' }
+  if (Succeeds { & $gh release view "v$version" --repo $GitHubRepo }) { throw "GitHub release v$version already exists in $GitHubRepo." }
   $head = (& git rev-parse HEAD).Trim()
-  & $gh api "repos/$GitHubRepo/commits/$head" --silent 2>$null
-  if ($LASTEXITCODE) { throw "Commit $head is not on GitHub ($GitHubRepo). Push it first." }
+  if (-not (Succeeds { & $gh api "repos/$GitHubRepo/commits/$head" --silent })) { throw "Commit $head is not on GitHub ($GitHubRepo). Push it first." }
 }
 if ($Publish) {
   $dirty = & git status --porcelain
