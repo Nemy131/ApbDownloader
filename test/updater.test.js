@@ -6,7 +6,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { compareVersions, validSource, pickUpdate, readManifest, download, checkOnStartup } = require('../src/updater');
+const { compareVersions, validSource, pickUpdate, readManifest, reachableFiles, download, checkOnStartup } = require('../src/updater');
 
 const SHARE = '\\\\nas\\share\\apb';
 const sha = s => crypto.createHash('sha256').update(s).digest('hex');
@@ -80,6 +80,7 @@ test('download copies the archive and checks its size and SHA-256', async t => {
 test('update prompt omits release notes; "업데이트 로그 보기" shows them in a separate dialog', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apb-upd-test-'));
   const share = path.join(dataDir, 'share'); fs.mkdirSync(share);
+  fs.mkdirSync(path.join(share, 'v9.0.0')); fs.writeFileSync(path.join(share, 'v9.0.0', 'AplayboxDownloader-Windows-x64.zip'), '0123456789');
   fs.writeFileSync(path.join(share, 'latest.json'), JSON.stringify({ version: '9.0.0', notes: '- 새 기능 설명', files: [{ ...zip, path: 'v9.0.0/AplayboxDownloader-Windows-x64.zip' }] }));
   const shown = [], opened = [], answers = [3, 0, 3, 1, 1];
   try {
@@ -114,4 +115,29 @@ test('no prompt when the share is unreachable', async () => {
     });
   } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
   assert.equal(asked, false);
+});
+
+test('no prompt when latest.json is there but the version folder or its files are missing', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apb-upd-test-'));
+  const share = path.join(dataDir, 'share'); fs.mkdirSync(share);
+  fs.writeFileSync(path.join(share, 'latest.json'), JSON.stringify({ version: '9.0.0', notes: 'x', files: [{ ...zip, path: 'v9.0.0/AplayboxDownloader-Windows-x64.zip' }] }));
+  let asked = false;
+  try {
+    await checkOnStartup({
+      app: { isPackaged: true, getVersion: () => '1.0.0', quit() {} },
+      dialog: { showMessageBox: async () => { asked = true; return { response: 1 }; } },
+      win: { isDestroyed: () => false, webContents: { send() {} }, setProgressBar() {} },
+      source: share, dataDir, platform: 'win32'
+    });
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); }
+  assert.equal(asked, false);
+});
+
+test('reachableFiles drops missing or partly copied files and keeps the 7z-first order', async () => {
+  const sizes = { a: 7, b: 3 };
+  const stat = async p => { if (!(p in sizes)) throw new Error('ENOENT'); return { isFile: () => true, size: sizes[p] }; };
+  const info = { version: '1.2.0', files: [{ format: '7z', path: 'a', size: 7 }, { format: 'zip', path: 'b', size: 10 }] };
+  assert.deepEqual((await reachableFiles(info, { stat })).files.map(f => f.format), ['7z']);
+  assert.equal(await reachableFiles({ ...info, files: [{ format: 'zip', path: 'missing', size: 1 }] }, { stat }), null);
+  assert.equal(await reachableFiles(info, { stat: () => new Promise(() => {}), timeout: 30 }), null);
 });

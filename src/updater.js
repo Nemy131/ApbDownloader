@@ -66,6 +66,16 @@ async function readManifest(source, { readFile = fsp.readFile, timeout = READ_TI
   return JSON.parse(String(text).replace(/^\ufeff/, ''));
 }
 
+// Keeps only the files that exist on the share with the expected size, so no prompt is shown for a version whose
+// folder is missing or still being copied. Returns null when none is usable.
+async function reachableFiles(info, { stat = fsp.stat, timeout = READ_TIMEOUT } = {}) {
+  const files = [];
+  for (const f of info.files) {
+    try { const st = await withTimeout(stat(f.path), timeout, 'timeout'); if (st.isFile() && st.size === f.size) files.push(f); } catch {}
+  }
+  return files.length ? { ...info, ...files[0], files } : null;
+}
+
 // Copies the archive from the share into the temp folder while hashing it, so the file that is checked is the one extracted.
 async function download(info, target, onProgress, { stallTimeout = STALL_TIMEOUT } = {}) {
   const input = fs.createReadStream(info.path, { highWaterMark: 1 << 20 });
@@ -182,6 +192,8 @@ async function checkOnStartup({ app, dialog, shell, win, source, dataDir, onLog,
     let manifest = null; try { manifest = await readManifest(source); } catch { return; } // off the company network or share unreachable: stay quiet
     info = pickUpdate(manifest, app.getVersion(), source);
     if (!info) return;
+    info = await reachableFiles(info);
+    if (!info) return; // version folder or files missing on the share: no prompt either
     let skipped = ''; try { skipped = JSON.parse(await fsp.readFile(skipFile, 'utf8')).version || ''; } catch {}
     if (skipped === info.version) return;
     if (!win || win.isDestroyed()) return;
@@ -232,4 +244,4 @@ async function checkOnStartup({ app, dialog, shell, win, source, dataDir, onLog,
   }
 }
 
-module.exports = { parseVersion, compareVersions, validSource, pickUpdate, readManifest, download, extract, checkOnStartup };
+module.exports = { parseVersion, compareVersions, validSource, pickUpdate, readManifest, reachableFiles, download, extract, checkOnStartup };
